@@ -6,6 +6,7 @@ import { makeGun, initGunEnv, tickSkins, skinFx, setGunQuality, gunBox, pulseSki
 import { createFpv } from './fpv.js';
 import { paintTex, isPaint, initPaintEditor, paintUI } from './paint.js';
 import { makeRig, rigHold, rigShot, rigFlinch, rigMuzzle, animate as animRig, setAvatarFlash } from './avatar.js';
+import { loadRobot } from './robot.js';
 import { initAudio, audioOn, setVolume, sfxShot, sfxBoom, sfxStep, sfxSplash, sfxTone, sfxImpact as playImpact, sfxWhiz, sfxReload, sfxUI, setAmbient, engineSound, sfxSkin, sfxSample } from './audio.js';
 import { initFx, flashTex, addTracer, hole, clearHoles, spark, emitSpark, emitChip, puff, lightFlash, explode, addSmoke, clearSmokes, smokes, glow, shock, updateFx as tickFx } from './fx.js';
 import { buildWorld, blobShadow, MOODS, setWorldQuality } from './world.js';
@@ -36,6 +37,7 @@ renderer.info.autoReset = false; // 한 프레임에 그린 양을 모두 더해
 renderer.toneMapping = TONE; // 밝은 곳이 하얗게 날아가지 않고 부드럽게 눌림
 setGunQuality(gfx);
 initGunEnv(renderer);
+loadRobot(); // 휴머노이드 로봇 몸 모델 (robot.js) — 메뉴에 있는 동안 받아 둠
 setWorldQuality(gfx, renderer);
 // 후처리(빛 번짐·선명도·색 보정). 화질 '낮음'은 쓰지 않고 바로 화면에 그림
 const post = gfx === 'low' ? null : makePost(renderer, { samples: gfx === 'high' ? 4 : 2, levels: gfx === 'high' ? 5 : 3 });
@@ -145,7 +147,7 @@ function nameSprite(text, team) {
   s.position.y = 2.2;
   return s;
 }
-// 캐릭터: 하얀 인형 몸에 저마다 그린 그림을 입힌다 (목의 띠가 팀 색). 봇은 무작위 위장 무늬
+// 캐릭터: 휴머노이드 로봇의 흰 장갑에 저마다 그린 그림을 입힌다 (빛나는 줄이 팀 색). 봇은 무작위 도색
 const paints = new Map(); // 사람 id → 그림 자료(문자열)
 function paintTexOf(info) {
   if (info.op && OPS[info.op]) return paintTex('op' + info.op, 'op', 0, (g) => opDraw(g, OPS[info.op].id)); // 요원 스킨이 그림보다 먼저
@@ -155,14 +157,16 @@ function paintTexOf(info) {
   return paintTex('def');
 }
 // 적 잘 보이게: 몸 가장자리가 빨갛게 빛나는 윤곽광(멀수록 진하게) + 벽에 가리지 않고 보이는 적 머리 위의 빨간 표식 (화면 크기 고정)
-function rimOf(mat) {
+function rimOf(mats) { // 로봇의 장갑·뼈대 재질이 같은 윤곽광 값을 나눠 씀
   const u = { value: new THREE.Color(0, 0, 0) };
-  mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uRim = u;
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += uRim * ( 0.25 + pow( 1.0 - saturate( abs( dot( normal, normalize( vViewPosition ) ) ) ), 2.0 ) );');
-  };
-  mat.customProgramCacheKey = () => 'rim';
+  for (const mat of [].concat(mats)) {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uRim = u;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += uRim * ( 0.25 + pow( 1.0 - saturate( abs( dot( normal, normalize( vViewPosition ) ) ) ), 2.0 ) );');
+    };
+    mat.customProgramCacheKey = () => 'rim';
+  }
   return u;
 }
 let markTex = null;
@@ -183,7 +187,7 @@ function makeAvatar(info) {
   g.add(tag, shadow, mark);
   g.visible = false;
   scene.add(g);
-  const av = Object.assign(rig, { g, tag, shadow, mark, rim: rimOf(rig.mat), losT: 0, los: false, bot: !!info.bot, c: false, buf: [], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hp: 100, alive: false, wasAlive: false, deadT: 9, fallDir: 0, prot: false, stepT: 0, shotAt: 0, team: info.team, name: info.name, chute: null, ci: info.ci, id: info.id, op: info.op || 0, sk: info.sk || null, att: info.att || null, sl: info.sl || null });
+  const av = Object.assign(rig, { g, tag, shadow, mark, rim: rimOf(rig.mats || rig.mat), losT: 0, los: false, bot: !!info.bot, c: false, buf: [], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hp: 100, alive: false, wasAlive: false, deadT: 9, fallDir: 0, prot: false, stepT: 0, shotAt: 0, team: info.team, name: info.name, chute: null, ci: info.ci, id: info.id, op: info.op || 0, sk: info.sk || null, att: info.att || null, sl: info.sl || null });
   holdGun(av, W_PISTOL);
   return av;
 }

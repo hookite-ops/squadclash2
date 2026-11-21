@@ -1,5 +1,5 @@
-// SQUAD CLASH — 그림을 그릴 수 있는 캐릭터
-// 캐릭터는 머리·몸통·팔 둘·다리 둘, 여섯 덩어리로 된 하얀 인형이고, 앞·뒤 두 장에 그린 그림이 몸에 그대로 입혀진다.
+// SQUAD CLASH 2 — 그림을 그릴 수 있는 캐릭터
+// 캐릭터는 휴머노이드 로봇(robot.js)이고, 앞·뒤 두 장에 그린 그림이 흰 장갑에 그대로 입혀진다 (머리·몸통·팔 둘·다리 둘 칸은 전작과 같음).
 // 그림 자료: 256 × 256 그림 한 장 (왼쪽 절반 = 앞, 오른쪽 절반 = 뒤, 위쪽이 머리). 주고받을 때는 압축한 그림(data URL).
 import * as THREE from './vendor/three.module.js';
 
@@ -12,7 +12,7 @@ function face(g) { // 기본 얼굴: 눈과 웃는 입 (앞 장 머리 자리)
   g.fillStyle = '#17181b'; for (const x of [53, 75]) { g.beginPath(); g.ellipse(x, 31, 3.6, 5.6, 0, 0, 7); g.fill(); }
   g.strokeStyle = '#17181b'; g.lineWidth = 2.6; g.lineCap = 'round'; g.beginPath(); g.arc(64, 36, 11, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke();
 }
-export function defaultDraw(g) { g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, AW, SH); face(g); }
+export function defaultDraw(g) { g.fillStyle = '#f2f3f5'; g.fillRect(0, 0, AW, SH); } // 로봇은 바이저가 얼굴이라 얼굴을 그리지 않음
 export function camoDraw(g, seed) { // 무작위 위장 무늬 (봇, [무작위 위장] 버튼)
   let s = (seed * 2654435761) >>> 0; const R = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   const sets = [['#cfae78', '#8a6a42', '#5a4a3a', '#e3cfa2'], ['#8b9097', '#4b5058', '#2a2f38', '#b4b8bd'], ['#4f7a3c', '#2f5d34', '#7a5230', '#9aa860'], ['#3a3f48', '#1d2a44', '#6a7078', '#14161a'], ['#7a5230', '#cfae78', '#2f5d34', '#4a3626'], ['#1d2a44', '#2f62c8', '#4b5058', '#0f1626']], P = sets[Math.floor(R() * sets.length)];
@@ -22,31 +22,33 @@ export function camoDraw(g, seed) { // 무작위 위장 무늬 (봇, [무작위 
     for (let k = 0; k < 9; k++) { const a = (k / 9) * 6.283, rr = r * (0.55 + R() * 0.6); g[k ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.72); }
     g.closePath(); g.fill();
   }
-  face(g);
 }
 
-export function outfitDraw(g, seed) { // 봇 복장: 헬멧·조끼·장갑·무릎 보호대·군화 (색 조합 여섯 가지)
+export function outfitDraw(g, seed) { // 봇 로봇 도색: 바탕·포인트·어두운 색 조합 여덟 가지 + 정수리 띠·가슴판·어깨·무릎·부대 번호
   let s = (seed * 2654435761) >>> 0; const R = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const sets = [ // 군복, 조끼, 헬멧, 바지, 포인트
-    ['#b99a6a', '#6f5a3c', '#8a7350', '#a48a5e', '#3d3226'], ['#5c6d44', '#39432c', '#4a5838', '#515f3d', '#2a2f22'], ['#6f757d', '#3c4148', '#555b63', '#5d636b', '#24272c'],
-    ['#2c3c5c', '#1a2438', '#25324c', '#27344f', '#111827'], ['#2b2d31', '#17181b', '#222428', '#26282c', '#5a5f66'], ['#7d6a52', '#4a5a3a', '#5e6b48', '#6b5a44', '#2e2a22']];
-  const [U, V, H, P, K] = sets[Math.floor(R() * sets.length)], skin = ['#f0c8a4', '#d9a57c', '#b07a54', '#8a5a3a'][Math.floor(R() * 4)];
-  const X = (x) => (1 - (x + HW) / DW) * SW, Y = (y) => (1 - y / DH) * SH; // 몸 자리(m) → 그림 자리
+  const sets = [ // 바탕, 포인트, 어두운 색, 줄
+    ['#5d6670', '#e0b030', '#2a2f36', '#e8eaec'], ['#c9b086', '#7a5a32', '#4a3a28', '#efe3c6'], ['#6b7a4a', '#2f3a24', '#3c4430', '#d8d2a0'], ['#e8edf2', '#3a80c8', '#3a4048', '#1d2a44'],
+    ['#9a2a30', '#1c1c20', '#3a1418', '#e8e2dc'], ['#2c3c5c', '#d8dde4', '#18202e', '#f0b030'], ['#e07a2a', '#202226', '#3a2a1c', '#f4f0e8'], ['#2a8a86', '#e8e8e0', '#1c3a3a', '#f0c040']];
+  const [U, A, K, S] = sets[Math.floor(R() * sets.length)], num = String(1 + Math.floor(R() * 98)).padStart(2, '0'), vstripe = R() < 0.5, chev = R() < 0.4;
+  const X = (x) => (1 - (x + HW) / DW) * SW, Y = (y) => (1 - y / DH) * SH;
   for (const side of [0, 1]) {
     g.save(); g.beginPath(); g.rect(side * SW, 0, SW, SH); g.clip(); g.translate(side * SW, 0);
     const box = (x0, y0, x1, y1, c) => { g.fillStyle = c; g.fillRect(Math.min(X(x0), X(x1)), Y(y1), Math.abs(X(x1) - X(x0)), Y(y0) - Y(y1)); };
     box(-0.48, 0, 0.48, 1.9, U);
-    box(-0.25, 0, 0.25, 0.77, P); box(-0.25, 0, 0.25, 0.13, '#17181b'); box(-0.25, 0.13, 0.25, 0.155, '#0c0d0f');              // 바지, 군화
-    for (const x of [-0.225, 0.015]) box(x, 0.36, x + 0.21, 0.5, K);                                                             // 무릎 보호대
-    box(-0.25, 0.74, 0.25, 0.8, '#1c1d20'); if (!side) box(-0.04, 0.745, 0.04, 0.795, '#8a8f97');                                 // 허리띠
-    box(-0.2, 0.83, 0.2, 1.38, V);                                                                                               // 조끼
-    if (!side) { for (const x of [-0.17, -0.05, 0.07]) { box(x, 0.86, x + 0.1, 1.02, K); box(x, 1.0, x + 0.1, 1.02, '#0e0f11'); } box(-0.17, 1.2, -0.05, 1.3, K); box(0.06, 1.22, 0.16, 1.27, '#c9ccd1'); }
-    else { box(-0.16, 0.9, 0.16, 1.34, K); box(-0.12, 1.12, 0.12, 1.16, '#0e0f11'); box(-0.1, 0.94, 0.1, 1.06, V); }              // 등에는 배낭
-    for (const x of [-0.2, 0.15]) box(x, 1.38, x + 0.05, 1.44, '#1c1d20');                                                       // 어깨끈
-    for (const sx of [-1, 1]) { box(sx * 0.25, 0.76, sx * 0.48, 0.9, '#1c1d20'); box(sx * 0.25, 0.9, sx * 0.48, 0.93, K); box(sx * 0.27, 1.22, sx * 0.45, 1.32, V); } // 장갑, 소매 끝, 팔 표식
-    box(-0.21, 1.44, 0.21, 1.82, skin);                                                                                          // 얼굴
-    box(-0.21, side ? 1.56 : 1.67, 0.21, 1.82, H); box(-0.21, side ? 1.56 : 1.67, 0.21, (side ? 1.56 : 1.67) + 0.025, K);         // 헬멧 (뒤는 더 깊이 덮음)
-    if (!side) { g.fillStyle = '#17181b'; for (const x of [53, 75]) { g.beginPath(); g.ellipse(x, 39, 3.2, 4.4, 0, 0, 7); g.fill(); } g.fillRect(57, 49, 14, 2.4); box(-0.21, 1.47, -0.17, 1.67, '#1c1d20'); box(0.17, 1.47, 0.21, 1.67, '#1c1d20'); } // 눈, 입, 턱끈
+    box(-0.21, 1.66, 0.21, 1.82, A); box(-0.21, 1.655, 0.21, 1.668, S);                                   // 정수리 띠
+    if (vstripe) { box(-0.03, 1.66, 0.03, 1.82, S); }
+    box(-0.24, 0.72, 0.24, 0.86, K);                                                                        // 허리
+    if (!side) { box(-0.2, 1.2, 0.2, 1.4, A); box(-0.2, 1.195, 0.2, 1.207, S); }                            // 가슴판
+    else { box(-0.17, 1.02, 0.17, 1.38, A); }                                                               // 등판
+    if (vstripe) for (const x of [-0.09, 0.06]) box(x, 0.86, x + 0.03, 1.44, S);
+    if (chev && !side) { g.fillStyle = S; g.beginPath(); g.moveTo(X(-0.2), Y(1.08)); g.lineTo(X(0), Y(0.96)); g.lineTo(X(0.2), Y(1.08)); g.lineTo(X(0.2), Y(1.12)); g.lineTo(X(0), Y(1.0)); g.lineTo(X(-0.2), Y(1.12)); g.closePath(); g.fill(); }
+    g.fillStyle = side ? K : U; g.font = `900 ${side ? 22 : 12}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(num, X(side ? 0 : 0.1), Y(side ? 1.2 : 1.3));                                                   // 부대 번호
+    for (const sx of [-1, 1]) {
+      box(sx * 0.24, 1.26, sx * 0.475, 1.44, A); box(sx * 0.24, 1.255, sx * 0.475, 1.266, S);             // 어깨
+      box(sx * 0.24, 0.96, sx * 0.475, 0.99, S); box(sx * 0.24, 0.76, sx * 0.475, 0.86, K);                // 팔 띠, 손
+    }
+    for (const x of [-0.24, 0]) { box(x, 0.36, x + 0.24, 0.46, A); box(x, 0, x + 0.24, 0.1, K); box(x, 0.64, x + 0.24, 0.67, S); } // 무릎, 발, 허벅지 띠
     g.restore();
   }
 }
@@ -68,6 +70,7 @@ export function paintTex(key, kind, val, draw) { // draw: 직접 그리는 함�
 }
 
 // ── 몸 (그림이 입혀지는 자리 계산) ──
+export const dollUV = (x, y, front) => uvOf(x, y, front); // 로봇 몸(robot.js)이 그림 자리를 매길 때 씀
 const uvOf = (x, y, front) => { const xn = Math.min(1 - 1.5 / SW, Math.max(1.5 / SW, (x + HW) / DW)), v = Math.min(1 - 1.5 / SH, Math.max(1.5 / SH, y / DH)); return [front ? (1 - xn) * 0.5 : 0.5 + xn * 0.5, v]; };
 function dollMap(g, ox, oy, hw = 9) { // hw = 덩어리 반 너비 (옆면이 옆 덩어리 자리의 색을 집지 않게 안쪽으로 당김) // 서 있는 자세의 앞·뒤에서 본 자리 그대로 그림을 입힘 (삼각형마다 앞·뒤를 정함)
   g = g.index ? g.toNonIndexed() : g;

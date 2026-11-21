@@ -97,8 +97,10 @@ const T = (r, t, arc = Math.PI * 2, s = 24) => geo(`t${r}:${t}:${arc}:${s}`, () 
 export function dressOp(rig, op) {
   const id = OPS[op] && OPS[op].id;
   if (!PAL[id]) return;
-  const M = mats(id), sp = rig.spine, hd = rig.head, ups = [rig.armR.up, rig.armL.up], fores = [rig.armR.fore, rig.armL.fore];
-  const knees = rig.legs.map((l) => l.knee), thighs = rig.legs.map((l) => l.thigh);
+  // 로봇 몸이면 뼈마다 작은 묶음을 끼워 장식을 로봇 크기에 맞춤 (rig.fitOp: 자리·배율)
+  const F = rig.fitOp, px = (b, k) => { if (!F || !F[k]) return b; const g = new THREE.Group(); g.position.fromArray(F[k].p); g.scale.fromArray(F[k].s); b.add(g); return g; };
+  const M = mats(id), sp = px(rig.spine, 'spine'), hd = px(rig.head, 'head'), ups = [px(rig.armR.up, 'up'), px(rig.armL.up, 'up')], fores = [px(rig.armR.fore, 'fore'), px(rig.armL.fore, 'fore')];
+  const knees = rig.legs.map((l) => px(l.knee, 'knee')), thighs = rig.legs.map((l) => px(l.thigh, 'thigh')), hips = px(rig.hips, 'hips');
   if (id === 'vanguard') {
     add(hd, B(0.45, 0.13, 0.45), M.armor, 0, 0.34, 0);                       // 투구 윗판
     add(hd, B(0.44, 0.22, 0.06), M.armor, 0, 0.2, -0.2);                     // 바이저 틀
@@ -126,7 +128,7 @@ export function dressOp(rig, op) {
     for (let i = 0; i < 4; i++) { const y = 0.14 + i * 0.12; add(sp, B(0.5, 0.06, 0.26), i % 2 ? M.armor : M.suit, 0, y, 0); add(sp, B(0.505, 0.01, 0.265), M.trim, 0, y - 0.03, 0); } // 미늘 몸통
     ups.forEach((u) => { for (let i = 0; i < 3; i++) { add(u, B(0.31 - i * 0.02, 0.06, 0.31 - i * 0.02), i % 2 ? M.armor : M.suit, 0, 0.04 - i * 0.075, 0); add(u, B(0.315 - i * 0.02, 0.01, 0.315 - i * 0.02), M.trim, 0, 0.01 - i * 0.075, 0); } }); // 큰 어깨 갑옷(소데)
     fores.forEach((f) => { add(f, B(0.22, 0.2, 0.23), M.armor, 0, -0.2, 0); add(f, B(0.225, 0.01, 0.235), M.trim, 0, -0.1, 0); });
-    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4; add(rig.hips, B(0.2, 0.22, 0.03), M.suit, Math.sin(a) * 0.2, -0.08, Math.cos(a) * 0.15, 0.15 * Math.cos(a), a, 0); } // 허리 치마(쿠사즈리)
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4; add(hips, B(0.2, 0.22, 0.03), M.suit, Math.sin(a) * 0.2, -0.08, Math.cos(a) * 0.15, 0.15 * Math.cos(a), a, 0); } // 허리 치마(쿠사즈리)
     const kat = new THREE.Group(); kat.position.set(0, 0.42, 0.17); kat.rotation.z = 0.75; sp.add(kat); // 등의 카타나
     add(kat, C(0.026, 0.026, 0.72, 10), M.suit, 0, -0.1, 0); add(kat, C(0.027, 0.027, 0.02, 10), M.trim, 0, -0.46, 0);
     add(kat, C(0.06, 0.06, 0.012, 16), M.trim, 0, 0.27, 0); add(kat, C(0.02, 0.02, 0.24, 8), M.dark, 0, 0.4, 0);

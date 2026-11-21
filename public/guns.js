@@ -20,6 +20,7 @@ export function initGunEnv(renderer) {
   ENV = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose();
   for (const k in cache) envOf(cache[k].scene);
 }
+export const gunEnv = () => ENV; // 로봇 몸(robot.js)도 같은 반사 환경을 씀
 function envOf(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) { if (ENV && m.isMeshStandardMaterial) { m.envMap = ENV; m.envMapIntensity = 0.85; m.needsUpdate = true; } } }); }
 export function loadModel(id) {
   if (cache[id]) return Promise.resolve(cache[id]);
@@ -161,7 +162,7 @@ export function makeGun(wi, skin = 0) {
   const box = new THREE.Box3(new THREE.Vector3(Math.min(mn[0], mx[0]), Math.min(mn[1], mx[1]), Math.min(mn[2], mx[2])), new THREE.Vector3(Math.max(mn[0], mx[0]), Math.max(mn[1], mx[1]), Math.max(mn[2], mx[2])));
   group.userData.box = box;
   const info = { group, grip: conv(f.grip), fore: conv(f.fore), muzzle: conv(f.muzzle), sight: conv(f.sight) || [0, (box.max.y + conv(f.muzzle)[1]) * 0.5, 0], adsZ: 0, aura: null, wi, skin };
-  const fill = (m) => { const cl = m.pristine.clone(true); cl.position.set(0, 0, 0); cl.quaternion.identity(); cl.scale.set(1, 1, 1); applySkin(cl, skin); inner.add(cl); };
+  const fill = (m) => { const cl = m.pristine.clone(true); cl.position.set(0, 0, 0); cl.quaternion.identity(); cl.scale.set(1, 1, 1); cl.traverse((o) => { if (/^flash/i.test(o.name)) o.visible = false; }); applySkin(cl, skin); inner.add(cl); }; // 총구 불꽃 모델은 숨김 (3인칭 불꽃은 avatar.js 의 그림)
   if (cache[id]) fill(cache[id]); else if (id) loadModel(id).then(fill, () => {});
   return info;
 }

@@ -1,25 +1,25 @@
-// SQUAD CLASH — 3인칭 캐릭터의 뼈대와 동작
-// 몸은 paint.js 의 buildBody 가 만든다 (엉덩이·허리·무릎·팔꿈치 관절). 여기서는 총을 쥐여 주고, 매 프레임 자세를 잡는다:
+// SQUAD CLASH 2 — 3인칭 캐릭터(휴머노이드 로봇)의 뼈대와 동작
+// 몸은 robot.js 의 buildRobot 이 만든다 (엉덩이·허리·무릎·팔꿈치 관절이 뼈). 여기서는 총을 쥐여 주고, 매 프레임 자세를 잡는다:
 // 걷기·달리기(무릎이 굽음), 앉기(한쪽 무릎을 꿇음), 점프, 몸 기울임, 사격 반동, 맞았을 때 움찔, 쓰러짐.
 import * as THREE from './vendor/three.module.js';
 import { WEAPONS } from './shared.js';
 import { makeGun, gunBox } from './guns.js';
-import { buildBody } from './paint.js';
+import { buildRobot, RB } from './robot.js';
 
-const TH = 0.38, SHIN = 0.38, UA = 0.36, FA = 0.38, REACH = UA + FA - 0.012;
-const SHO = [new THREE.Vector3(0.3575, 0.05, 0.02), new THREE.Vector3(-0.3575, 0.05, 0.02)]; // 어깨: 오른쪽·왼쪽 (팔 묶음의 중심 기준, 몸통을 틀지 않았을 때)
+const TH = RB.TH, SHIN = RB.SHIN, UA = RB.UA, FA = RB.FA, REACH = UA + FA - 0.012; // FA = 팔꿈치 → 쥔 손 가운데
+const SHO = [new THREE.Vector3(RB.SHO_X, RB.SHO_Y, 0), new THREE.Vector3(-RB.SHO_X, RB.SHO_Y, 0)]; // 어깨: 오른쪽·왼쪽 (팔 묶음의 중심 기준, 몸통을 틀지 않았을 때)
 const DOWN = new THREE.Vector3(0, -1, 0);
 const _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _d = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _e = new THREE.Vector3(), _h = new THREE.Vector3(), _t = new THREE.Vector3();
 const clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
 const ease = (v) => v * v * (3 - 2 * v);
 // 총을 들지 않았을 때(쓰러짐 등) 손이 가는 자리
-const RAG_R = new THREE.Vector3(0.62, -0.22, -0.12), RAG_L = new THREE.Vector3(-0.6, -0.16, -0.2), NOH = { r: new THREE.Vector3(0.3, -0.5, -0.1), l: new THREE.Vector3(-0.3, -0.5, -0.1), twist: 0, muzzle: new THREE.Vector3(0.2, 0, -0.9) };
+const RAG_R = new THREE.Vector3(0.52, -0.2, -0.1), RAG_L = new THREE.Vector3(-0.5, -0.14, -0.16), NOH = { r: new THREE.Vector3(0.26, -0.48, -0.08), l: new THREE.Vector3(-0.26, -0.48, -0.08), twist: 0, muzzle: new THREE.Vector3(0.2, 0, -0.9) };
 
 let flashTex = null;
 export function setAvatarFlash(tex) { flashTex = tex; }
 
 export function makeRig(tex, bandMat) {
-  const r = buildBody(tex, bandMat);
+  const r = buildRobot(tex, bandMat);
   r.guns = []; r.hands = []; r.w = -1; r.flash = null;
   r.an = { walk: 0, cr: 0, air: 0, spr: 0, kick: 0, flinch: 0, lean: 0, roll: 0, dead: 0, deadT: 0, t: Math.random() * 9, fall: 0, tw: 0.3, hr: new THREE.Vector3(0.2, -0.07, -0.34), hl: new THREE.Vector3(0.2, 0, -0.7) };
   return r;
