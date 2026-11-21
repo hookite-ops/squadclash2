@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1016">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>SQUAD CLASH 2 · 기계 침공</title>
+<link rel="icon" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div id="dmg"></div>
+  <div id="cross"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitm"></div>
+  <div id="hurtDir"><i></i></div>
+  <div id="scope"><div class="ring"></div></div>
+  <div id="tl">
+    <div class="hp"><div id="hpBar"></div><span id="hpTxt">100</span></div>
+    <div class="emp"><div id="empBar"></div><span>EMP</span></div>
+    <div id="sq"></div>
+  </div>
+  <div id="tc"><div id="waveTxt">웨이브 1</div><div id="leftTxt">남은 적 0</div></div>
+  <div id="score">0</div>
+  <button id="btnPause" aria-label="일시정지">II</button>
+  <div id="wpn"><div id="slots"></div><div id="ammo"><b id="mag">15</b><span id="magMax">/ 15</span></div><div id="wname">HX-9</div></div>
+  <div id="feed"></div>
+  <div id="toast"></div>
+  <div id="nums"></div>
+  <div id="bars"></div>
+  <div id="vmload">무기 불러오는 중…</div>
+</div>
+<div id="title" class="screen">
+  <div class="box">
+    <h1 class="logo"><b><i>SQUAD</i> <u>CLASH</u> <em>2</em></b><small>기계 침공</small></h1>
+    <p class="sub">스쿼드 클래시 그 후 — 격납고 7번에 기계 부대가 밀려온다. 분대와 함께 웨이브를 버티고, 클리어할 때마다 보급 상자에서 무기를 골라 바꿔 들어라.</p>
+    <button id="btnStart" disabled>불러오는 중…</button>
+    <button id="btnSkins" class="ghost">무기 스킨 · 코드</button>
+    <div id="best"></div>
+    <div class="keys">PC: WASD 이동 · 마우스 조준 · 좌클릭 사격 · 우클릭 정조준 · R 장전 · Q 무기 교체 · E EMP · Space 점프 · Shift 달리기</div>
+  </div>
+</div>
+<div id="pick" class="screen hidden">
+  <div class="box wide">
+    <h2 id="pickTitle">웨이브 1 클리어 · 보급 도착</h2>
+    <p class="sub" id="pickSub">무기 하나를 골라 지금 든 무기와 바꿔요. 체력은 다 찼어요.</p>
+    <div id="cards"></div>
+    <button id="btnSkip" class="ghost">그대로 계속</button>
+    <button id="btnPickQuit" class="ghost">처음으로</button>
+  </div>
+</div>
+<div id="skins" class="screen hidden">
+  <div class="box wide">
+    <h2>무기 스킨</h2>
+    <p class="sub">고른 스킨이 모든 무기에 입혀져요. 전작 SQUAD CLASH 스킨 코드가 그대로 통해요.</p>
+    <div id="skinGrid"></div>
+    <div class="coderow"><input id="codeIn" placeholder="스킨 코드 입력" autocomplete="off" spellcheck="false"><button id="btnCode">등록</button></div>
+    <div id="codeMsg"></div>
+    <button id="btnSkinClose" class="ghost">닫기</button>
+  </div>
+</div>
+<div id="pause" class="screen hidden">
+  <div class="box">
+    <h2>일시정지</h2>
+    <button id="btnResume">계속하기</button>
+    <div id="settings"></div>
+    <button id="btnQuit" class="ghost">처음으로</button>
+  </div>
+</div>
+<div id="over" class="screen hidden">
+  <div class="box">
+    <h2>격납고 함락</h2>
+    <div id="overStats"></div>
+    <button id="btnAgain">다시 하기</button>
+    <button id="btnHome" class="ghost">처음으로</button>
+  </div>
+</div>
+<div id="rotate"><div>📱↻<br>가로로 돌려 주세요</div></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
