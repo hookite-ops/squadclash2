@@ -1,21 +1,29 @@
 // SQUAD CLASH 2 · 기계 침공 — 흐름: 불러오기 → 웨이브(출입구에서 적이 나옴) → 클리어 → 보급(무기 3개 중 하나) → 다음 웨이브
 import * as THREE from 'three';
 import { G, store, rand, pick } from './state.js';
-import { initRenderer, buildArena, resize, renderWorld, updateGates, GATES, setLowQuality } from './world.js';
+import { initRenderer, buildArena, resize, renderWorld, updateGates, GATES, setQuality, quality } from './world.js';
 import { initFx, updateFx, resizeFx, tracer, muzzle } from './fx.js';
-import { P, initInput, updatePlayer, resetPlayer } from './player.js';
+import { P, initInput, updatePlayer, resetPlayer, lockPointer } from './player.js';
 import { W, WEAPONS, initVM, vmLight, loadVM, equip, setHooks, vmRender, vmResize, resetWeapons } from './weapons.js';
 import { loadEnemyModels, spawn, updateEnemies, hitscan, assistTargets, clearEnemies, alive, bindPlayer, bindSquad, enemies, dropOrb, updateOrbs } from './enemies.js';
 import { squad, initSquad, updateSquad, resetSquad, reviveSquad } from './squad.js';
 import { MobileFPSControls } from './controls/mfc.js';
 import * as UI from './ui.js';
 import { SKINS, TIER, owned, equipped, setEquipped, redeem, applySkin } from './skins.js';
-import { initAudio, sfx, suspendAudio } from './audio.js';
+import { initAudio, sfx, suspendAudio, setVolume } from './audio.js';
+import { S, vfov, buildOptions, QNAME } from './settings.js';
 
 const el = UI.el;
 document.body.classList.toggle('pc', !G.touch);
+// 설정 적용 (시야각·소리·십자선) — 화질은 렌더러를 만든 뒤
+G.fov = vfov(); G.vol = S.vol;
+document.documentElement.style.setProperty('--xc', S.xColor);
 initRenderer(el.c);
 buildArena();
+const LEVELS = ['low', 'mid', 'high'];
+let autoLv = G.touch ? 1 : 2;          // 자동: 노트북은 '높음'에서 시작해 끊기면 한 단계씩 낮춤
+const applyQuality = () => setQuality(S.quality === 'auto' ? LEVELS[autoLv] : S.quality);
+applyQuality();
 initFx();
 initVM(); vmLight(G.env);
 bindPlayer(P);
@@ -38,6 +46,8 @@ Promise.all([loadEnemyModels(), loadVM('hx9')]).then(() => {
 // ── 화면 전환 ──────────────────────────────────────────
 function setState(s) {
   G.state = s;
+  document.activeElement?.blur?.();           // 버튼에 남은 포커스가 Space·Enter 를 먹지 않게
+  if (s !== 'play') { UI.stats(false); el.relock.classList.add('hidden'); }
   G.controls?.setVisible(s === 'play');
   UI.show('hud', s === 'play' || s === 'pause' || s === 'pick');
   UI.show('title', s === 'title'); UI.show('pause', s === 'pause'); UI.show('pick', s === 'pick'); UI.show('over', s === 'over');
@@ -48,13 +58,19 @@ async function startRun() {
   try { if (G.touch && !document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch {}
   try { await screen.orientation?.lock?.('landscape'); } catch {}
   clearEnemies(); resetPlayer(); resetWeapons(); resetSquad(); UI.resetHud();
-  G.wave = 0; G.score = 0; G.kills = 0; G.heads = 0; G.runT = 0; G.streak = 0; G.breathing = false;
+  G.wave = 0; G.score = 0; G.kills = 0; G.heads = 0; G.runT = 0; G.streak = 0; G.breathing = false; G.shotsFired = 0; G.shotsHit = 0;
   await equip(0);
   setState('play');
-  if (!G.touch) el.c.requestPointerLock?.();
+  lockPointer();
   nextWave();
 }
-el.btnStart.addEventListener('click', startRun);
+let starting = false;
+async function start() {
+  if (starting || el.btnStart.disabled) return; starting = true;
+  lockPointer();                              // 클릭·키 입력 안에서 바로 잠가야 브라우저가 허락함
+  try { await startRun(); } finally { starting = false; }
+}
+el.btnStart.addEventListener('click', start);
 // ── 무기 스킨 화면 ─────────────────────────────────────
 function swatch(k) {
   const h = (v) => `rgb(${(v || [1, 1, 1]).map((x) => Math.round(Math.min(1, x) * 255)).join(',')})`;
@@ -82,9 +98,11 @@ el.btnCode.addEventListener('click', async () => {
 el.codeIn.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') el.btnCode.click(); });
 el.btnSkins.addEventListener('click', () => { renderSkins(); el.codeMsg.textContent = ''; UI.show('skins', true); UI.show('title', false); });
 el.btnSkinClose.addEventListener('click', () => { UI.show('skins', false); UI.show('title', G.state === 'title'); });
-el.btnAgain.addEventListener('click', startRun);
+el.btnAgain.addEventListener('click', start);
 el.btnHome.addEventListener('click', () => { clearEnemies(); setState('title'); });
-el.btnResume.addEventListener('click', () => { setState('play'); suspendAudio(false); if (!G.touch) el.c.requestPointerLock?.(); });
+function resume() { setState('play'); suspendAudio(false); lockPointer(); }
+el.btnResume.addEventListener('click', resume);
+el.relock.addEventListener('click', () => lockPointer());
 el.btnQuit.addEventListener('click', () => { clearEnemies(); suspendAudio(false); setState('title'); });
 el.btnPause.addEventListener('click', () => G.pause());
 el.btnPickQuit.addEventListener('click', () => { clearEnemies(); setState('title'); });
@@ -93,8 +111,59 @@ G.pause = () => {
   setState('pause'); suspendAudio(true);
   if (G.controls && !el.settings.dataset.built) { G.controls.buildSettings(el.settings, { onEditLayout: () => { UI.show('pause', false); G.controls.setVisible(true); G.controls.openEditor(() => { G.controls.setVisible(false); UI.show('pause', true); }); } }); el.settings.dataset.built = 1; }
 };
-addEventListener('resize', () => { resize(); vmResize(); resizeFx(); });
-vmResize();
+// ── 설정 화면 (제목·일시정지에서) ─────────────────────
+let optUI = null;
+function onOpt(key) {
+  if (key === 'fov') { G.fov = vfov(); if (G.state === 'title') { G.camera.fov = G.fov; G.camera.updateProjectionMatrix(); } }
+  else if (key === 'quality') { applyQuality(); optUI?.refreshQuality(); }
+  else if (key === 'vol') setVolume(S.vol);
+  else if (key === 'xColor') document.documentElement.style.setProperty('--xc', S.xColor);
+  else if (key === 'device') openOpts(true);
+}
+let optFrom = 'title';
+function openOpts(keep) {
+  if (!keep) optFrom = G.state === 'pause' ? 'pause' : 'title';
+  const sc = el.optList.scrollTop;
+  optUI = buildOptions(el.optList, onOpt, quality);
+  el.optList.scrollTop = sc;
+  UI.show('opts', true); UI.show('title', false); UI.show('pause', false);
+}
+function closeOpts() { UI.show('opts', false); UI.show(optFrom, G.state === optFrom); document.activeElement?.blur?.(); }
+el.btnOpts.addEventListener('click', () => openOpts());
+el.btnPauseOpts.addEventListener('click', () => openOpts());
+el.btnOptClose.addEventListener('click', closeOpts);
+el.btnFull.addEventListener('click', async () => {
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch {}
+});
+document.addEventListener('fullscreenchange', () => { el.btnFull.textContent = document.fullscreenElement ? '창 모드' : '전체 화면'; });
+// ── 메뉴 키보드 (노트북) ───────────────────────────────
+const shown = (id) => !el[id].classList.contains('hidden');
+addEventListener('keydown', (e) => {
+  if (e.target?.tagName === 'INPUT' || e.repeat) return;
+  const k = e.code;
+  if (shown('opts')) { if (k === 'Escape') { e.preventDefault(); closeOpts(); } return; }
+  if (shown('skins')) { if (k === 'Escape') { e.preventDefault(); el.btnSkinClose.click(); } return; }
+  const st = G.state;
+  if (st === 'play') {
+    if (k === 'Escape' || k === 'KeyP') { e.preventDefault(); G.pause(); }
+    else if (k === 'Tab') UI.stats(true);
+  } else if (st === 'pause') { if (k === 'Enter' || k === 'KeyP') { e.preventDefault(); resume(); } }
+  else if (st === 'title') { if (k === 'Enter') { e.preventDefault(); start(); } }
+  else if (st === 'pick') {
+    const i = { Digit1: 0, Digit2: 1, Digit3: 2, Numpad1: 0, Numpad2: 1, Numpad3: 2 }[k];
+    if (i !== undefined) { e.preventDefault(); el.cards.children[i]?.click(); }
+    else if (k === 'Space') { e.preventDefault(); el.btnSkip.click(); }
+  } else if (st === 'over') { if (k === 'Enter' || k === 'Space') { e.preventDefault(); start(); } }
+});
+addEventListener('keyup', (e) => { if (e.code === 'Tab') UI.stats(false); });
+// 판 도중 실수로 탭을 닫거나 새로고침하지 않게
+addEventListener('beforeunload', (e) => { if (!G.touch && (G.state === 'play' || G.state === 'pause' || G.state === 'pick')) { e.preventDefault(); e.returnValue = ''; } });
+function fitHud() {      // 노트북 화면 크기에 맞춰 HUD 글자·막대 크기
+  const hz = Math.max(0.9, Math.min(1.75, Math.min(innerWidth / 1366, innerHeight / 768)));
+  document.documentElement.style.setProperty('--hz', hz.toFixed(3));
+}
+addEventListener('resize', () => { resize(); vmResize(); resizeFx(); fitHud(); });
+vmResize(); fitHud();
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.pause(); });
 
 // ── 웨이브 ─────────────────────────────────────────────
@@ -150,13 +219,13 @@ function openPick() {
   UI.cards(ids, async (id) => {
     const slot = W.slots[1] ? W.cur : 1;
     W.slots[slot] = id; W.ammo[id] = WEAPONS[id].mag;
-    setState('play'); if (!G.touch) el.c.requestPointerLock?.();
+    setState('play'); lockPointer();
     await equip(slot);
     breather();
   });
   setState('pick');
 }
-el.btnSkip.addEventListener('click', () => { setState('play'); if (!G.touch) el.c.requestPointerLock?.(); for (const k in W.ammo) W.ammo[k] = WEAPONS[k].mag; breather(); });
+el.btnSkip.addEventListener('click', () => { setState('play'); lockPointer(); for (const k in W.ammo) W.ammo[k] = WEAPONS[k].mag; breather(); });
 function breather() {      // 다음 웨이브 전 3초: 자리 잡기
   queue = []; G.breathing = true; let n = 3;
   const tick = () => { if (G.state !== 'play' && G.state !== 'pause') return; if (G.state === 'pause') return setTimeout(tick, 300); if (n > 0) { UI.toast(`다음 웨이브 ${n}`); n--; setTimeout(tick, 1000); } else nextWave(); };
@@ -200,25 +269,33 @@ setHooks({
 
 // ── 루프 ───────────────────────────────────────────────
 const clock = new THREE.Clock();
-let fpsAcc = 0, fpsN = 0, lowQ = false;
+let fpsAcc = 0, fpsN = 0, settleT = 1.5, unlockT = 0;
 function frame() {
   requestAnimationFrame(frame);
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
-  // 프레임이 계속 40 아래면 화질을 낮춤 (한 번만)
-  if (G.state === 'play' && !lowQ) { fpsAcc += raw; fpsN++; if (fpsAcc > 3) { if (fpsN / fpsAcc < 40) { lowQ = true; setLowQuality(true); } fpsAcc = 0; fpsN = 0; } }
+  // 마우스 잠금이 풀린 채(잠금 실패·대기)면 멈추고 '클릭해서 계속'
+  unlockT = !G.touch && G.state === 'play' && !document.pointerLockElement ? unlockT + raw : 0;
+  const frozen = unlockT > 0.25; el.relock.classList.toggle('hidden', !frozen);
+  // 화질 자동: 4초 평균이 기준(노트북 50, 폰 40fps) 아래면 한 단계 낮춤
+  if (G.state === 'play' && !frozen && S.quality === 'auto' && autoLv > 0) {
+    if (settleT > 0) settleT -= raw;
+    else { fpsAcc += raw; fpsN++; if (fpsAcc > 4) { if (fpsN / fpsAcc < (G.touch ? 40 : 50)) { autoLv--; applyQuality(); optUI?.refreshQuality(); settleT = 2; } fpsAcc = 0; fpsN = 0; } }
+  }
   G.dt = dt;
+  const live = G.state === 'play' && !frozen;
   if (G.state === 'play' || G.state === 'pick') {
-    G.time += dt;
-    if (G.state === 'play') { G.runT += dt; updateWaves(dt); }
-    const r = updatePlayer(G.state === 'play' ? dt : 0);
+    if (live || G.state === 'pick') G.time += dt;
+    if (live) { G.runT += dt; updateWaves(dt); }
+    const r = updatePlayer(live ? dt : 0);
     el.hud.classList.toggle('scoped', !!r.scoped);
-    if (G.state === 'play') { updateEnemies(dt); updateOrbs(dt); updateSquad(dt); }
+    if (live) { updateEnemies(dt); updateOrbs(dt); updateSquad(dt); }
     updateGates(dt);
     UI.hud(P, alive(), queue.length); UI.bars(enemies); UI.squadHud(squad);
   } else if (G.state === 'title') {
     G.time += dt;
     // 제목 화면: 격납고를 천천히 둘러봄
     const a = G.time * 0.12; G.camera.position.set(Math.sin(a) * 12, 4.2, Math.cos(a) * 12); G.camera.lookAt(0, 1.5, 0);
+    if (Math.abs(G.camera.fov - G.fov) > 0.01) { G.camera.fov = G.fov; G.camera.updateProjectionMatrix(); }
     updateGates(dt);
   }
   updateFx(dt);
@@ -228,4 +305,4 @@ function frame() {
 setState('title');
 requestAnimationFrame(frame);
 // 디버그: 콘솔에서 상태 보기
-window.__a19 = { G, P, W, enemies, spawn, equip, openPick, nextWave };
+window.__a19 = { G, P, W, S, enemies, spawn, equip, openPick, nextWave, quality, setQuality };

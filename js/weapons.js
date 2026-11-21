@@ -61,7 +61,7 @@ export const W = {
   mixer: null, action: null, actName: '', camBone: null, camRest: new THREE.Quaternion(), flash: null,
   state: 'none',             // draw | idle | fire | reload | none
   nextShot: 0, fireT: 0, bloom: 0, adsAmt: 0, recoil: { p: 0, y: 0 }, camDelta: new THREE.Quaternion(),
-  evQ: [], clipT: 0, pendingSwitch: null,
+  evQ: [], clipT: 0, pendingSwitch: null, stance: 1, runAmt: 0,
 };
 export function initVM() {
   const s = new THREE.Scene();
@@ -114,6 +114,10 @@ export function swap() {
   if (!W.slots[1 - W.cur] || W.state === 'none') return;
   equip(1 - W.cur, true);
 }
+export function selectSlot(i) { if (i !== W.cur && W.slots[i] && W.state !== 'none') equip(i, true); }
+export function inspect() {      // F: 무기 살펴보기
+  if (W.clips?.Inspect && W.state === 'idle' && W.adsAmt < 0.2) { play('Inspect', { fade: 0.25 }); W.state = 'inspect'; W.still = 0; }
+}
 export function canReload() { return W.def && W.ammo[W.id] < W.def.mag && W.state !== 'reload' && W.state !== 'draw' && W.state !== 'none'; }
 export function reload() {
   if (!canReload()) return;
@@ -135,6 +139,7 @@ export function muzzleWorld(out) {
 }
 function shoot(moving, airborne) {
   const d = W.def, ads = W.adsAmt;
+  G.shotsFired = (G.shotsFired || 0) + 1; let anyHit = false;
   W.ammo[W.id]--;
   const last = W.ammo[W.id] === 0;
   const clip = last && W.clips.FireLast ? 'FireLast' : 'Fire';
@@ -147,7 +152,7 @@ function shoot(moving, airborne) {
   else W.nextShot = G.time + 60 / d.rpm;
   gunshot(d.shot);
   // 퍼짐: 허리(이동·점프·연사 누적) / 정조준
-  const hip = d.spread * (1 + (moving ? 0.6 : 0) + (airborne ? 1.2 : 0)) + W.bloom;
+  const hip = (d.spread * (1 + (moving ? 0.6 : 0) + (airborne ? 1.2 : 0)) + W.bloom) * W.stance;
   const spr = lerp(hip, d.adsSpread ?? d.spread * 0.35, ads);
   W.bloom = Math.min(d.spread * 1.6, W.bloom + d.spread * 0.18);
   const cam = G.camera;
@@ -158,8 +163,10 @@ function shoot(moving, airborne) {
     const dv = dir.clone().addScaledVector(right, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
     ray.set(cam.position, dv);
     const hit = hooks.hitscan?.(ray, d.dmg, d.pierce || 0, i === 0 ? d : null);
+    if (hit?.hits.length) anyHit = true;
     if (i < 3 || Math.random() < 0.35) hooks.tracer?.(mz, hit.point, d);
   }
+  if (anyHit) G.shotsHit = (G.shotsHit || 0) + 1;
   // 화면 반동 (위로 + 좌우 약간), 정조준이면 덜
   const k = d.kick * (1 - 0.35 * ads);
   W.recoil.p += k * rand(0.8, 1.1); W.recoil.y += k * rand(-0.35, 0.35);
@@ -176,6 +183,8 @@ export function updateWeapons(dt, inp) {
   const wantAds = inp.ads && W.state !== 'reload' && W.state !== 'draw' && !inp.sprint;
   W.adsAmt = damp(W.adsAmt, wantAds ? 1 : 0, wantAds ? 14 : 18, dt);
   W.bloom = Math.max(0, W.bloom - dt * d.spread * (inp.fire ? 1.2 : 5));
+  W.stance = damp(W.stance, inp.slide ? 1.3 : inp.crouch ? 0.7 : 1, 10, dt);      // 앉으면 퍼짐 줄고, 슬라이딩 중엔 늘어남
+  W.runAmt = damp(W.runAmt, inp.slide ? 1.45 : inp.sprint ? 1 : 0, 10, dt);
   // 상태
   if (W.state === 'reload' && G.time >= W.reloadEnd) { W.ammo[W.id] = d.mag; W.state = 'reloadTail'; }
   const a = W.action;
@@ -206,8 +215,8 @@ export function updateWeapons(dt, inp) {
   // 걸음 흔들림·관성
   const bob = inp.speed * (1 - W.adsAmt * 0.8);
   vmG.position.x += Math.sin(G.time * 9) * 0.004 * bob + inp.lookVel.x * -0.006;
-  vmG.position.y += -Math.abs(Math.cos(G.time * 9)) * 0.005 * bob + inp.lookVel.y * 0.004 - (inp.sprint ? 0.02 : 0);
-  vmG.rotation.z = (d.hip.rot[2] * Math.PI / 180) + (inp.sprint ? 0.18 : 0) * (1 - W.adsAmt);
+  vmG.position.y += -Math.abs(Math.cos(G.time * 9)) * 0.005 * bob + inp.lookVel.y * 0.004 - 0.02 * W.runAmt;
+  vmG.rotation.z = (d.hip.rot[2] * Math.PI / 180) + 0.18 * W.runAmt * (1 - W.adsAmt);
   return sc;
 }
 export function vmResize() { G.vmCamera.aspect = innerWidth / innerHeight; G.vmCamera.fov = innerWidth < innerHeight ? 66 : 54; G.vmCamera.updateProjectionMatrix(); }
@@ -216,5 +225,5 @@ export function vmRender() {
   G.renderer.clearDepth(); G.renderer.render(G.vmScene, G.vmCamera);
 }
 export function resetWeapons() {
-  W.slots = ['hx9', null]; W.cur = 0; W.ammo = {}; W.state = 'none'; W.adsAmt = 0; W.bloom = 0; W.recoil.p = W.recoil.y = 0;
+  W.slots = ['hx9', null]; W.cur = 0; W.ammo = {}; W.state = 'none'; W.adsAmt = 0; W.bloom = 0; W.recoil.p = W.recoil.y = 0; W.stance = 1; W.runAmt = 0;
 }

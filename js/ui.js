@@ -16,6 +16,7 @@ export function hud(P, alive, queued) {
   const hd = $('hurtDir');
   if (P.hurtDirT > 0 && P.hurtFrom) { const a = Math.atan2(P.hurtFrom.x - P.pos.x, P.hurtFrom.z - P.pos.z); const rel = -(a - (P.yaw + Math.PI)); hd.style.opacity = Math.min(1, P.hurtDirT); hd.style.transform = `rotate(${rel}rad)`; } else if (hd.style.opacity !== '0') hd.style.opacity = 0;
   $('empBar').style.width = `${(1 - P.empT / P.empCd) * 100}%`;
+  const er = P.empT <= 0; if (last.er !== er) { $('empBox').classList.toggle('ready', er); last.er = er; }
   $('dmg').style.opacity = Math.min(1, P.hurtT * 0.9 + (P.hp < 30 ? 0.25 + 0.15 * Math.sin(G.time * 6) : 0));
   const left = alive + queued;
   if (last.left !== left || last.wave !== G.wave) { $('leftTxt').textContent = `남은 적 ${left}`; $('waveTxt').textContent = `웨이브 ${G.wave}`; last.left = left; last.wave = G.wave; }
@@ -27,6 +28,10 @@ export function hud(P, alive, queued) {
     $('mag').textContent = W.state === 'reload' ? '…' : ammo; $('magMax').textContent = `/ ${mag}`; $('ammo').classList.toggle('low', ammo <= Math.ceil(mag * 0.25));
     $('wname').textContent = WEAPONS[id].name;
     $('slots').innerHTML = W.slots.map((s, i) => s ? `<div class="${i === W.cur ? 'on' : ''}">${i + 1} ${WEAPONS[s].short}</div>` : '').join('');
+    // 노트북: 탄이 적으면 재장전 키 안내
+    const h = $('hint'), rl = W.state === 'reload';
+    h.className = !rl && ammo === 0 ? 'empty' : '';
+    h.innerHTML = rl ? '' : ammo === 0 ? '<kbd>R</kbd>재장전' : ammo <= Math.ceil(mag * 0.25) ? '<kbd>R</kbd>재장전' : '';
     if (G.controls) {
       G.controls.setBadge?.('fire', W.state === 'reload' ? '장전' : `${ammo}`);
       const other = W.slots[1 - W.cur]; G.controls.setBadge?.('crouch', other ? WEAPONS[other].short : '');
@@ -40,6 +45,13 @@ export function hud(P, alive, queued) {
   $('cross').style.opacity = W.adsAmt > 0.6 && W.def?.scope ? 0 : 1 - W.adsAmt * 0.5;
 }
 export function resetHud() { last = {}; $('feed').innerHTML = ''; }
+// Tab: 이번 판 기록
+export function stats(on) {
+  const st = $('stats'); st.classList.toggle('hidden', !on); if (!on) return;
+  const t = Math.floor(G.runT || 0), acc = G.shotsFired ? Math.round((G.shotsHit || 0) / G.shotsFired * 100) : 0;
+  const rows = [['웨이브', G.wave], ['점수', G.score.toLocaleString()], ['처치', G.kills], ['머리 처치', G.heads], ['명중률', `${acc}%`], ['버틴 시간', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`], ['최고 점수', Math.max(G.best, G.score).toLocaleString()]];
+  st.innerHTML = '<h3>이번 판 기록</h3>' + rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+}
 // 무기 고르기
 export function cards(ids, onPick) {
   const box = $('cards'); box.innerHTML = '';
@@ -48,7 +60,7 @@ export function cards(ids, onPick) {
     const w = WEAPONS[id]; const dps = w.bolt ? 60 / 1.6 : w.pump ? 75 : w.rpm;
     const st = [['위력', Math.sqrt((w.dmg * (w.pellets || 1)) / maxD)], ['연사', Math.min(1, dps / 950)], ['탄창', Math.min(1, w.mag / 60)], ['정확도', Math.min(1, 0.006 / Math.max(0.006, w.adsSpread ?? w.spread * 0.35) * 0.9 + (w.scope ? 0.1 : 0))]];
     const c = document.createElement('div'); c.className = 'card';
-    c.innerHTML = `<span class="cls" style="background:${CLS_COL[w.tag]}22;color:${CLS_COL[w.tag]}">${w.cls}</span><div class="nm">${w.name}</div><div class="ds">${w.desc}</div>
+    c.innerHTML = `<kbd class="ck">${box.children.length + 1}</kbd><span class="cls" style="background:${CLS_COL[w.tag]}22;color:${CLS_COL[w.tag]}">${w.cls}</span><div class="nm">${w.name}</div><div class="ds">${w.desc}</div>
       <div class="st">${st.map(([k, v]) => `<span>${k}</span><i><b style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%;background:${CLS_COL[w.tag]}"></b></i>`).join('')}</div>`;
     c.addEventListener('click', () => onPick(id));
     box.appendChild(c);

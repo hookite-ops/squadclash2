@@ -6,7 +6,7 @@ const FILES = ['blaster', 'coin', 'enemy_attack', 'enemy_destroy', 'enemy_hurt',
 export async function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-  master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
+  master = ctx.createGain(); master.gain.value = G.vol ?? 0.85; master.connect(ctx.destination);
   const comp = ctx.createDynamicsCompressor(); master.disconnect(); master.connect(comp); comp.connect(ctx.destination);
   await Promise.all(FILES.map(async (f) => {
     try { const r = await fetch(`assets/sfx/${f}.ogg`); buf[f] = await ctx.decodeAudioData(await r.arrayBuffer()); } catch {}
@@ -15,6 +15,7 @@ export async function initAudio() {
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
 }
 export function suspendAudio(on) { if (!ctx) return; on ? ctx.suspend() : ctx.resume(); }
+export function setVolume(v) { G.vol = v; if (master) master.gain.value = v; }
 export function sfx(name, { vol = 1, rate = 1, jitter = 0.06, pan = 0, delay = 0 } = {}) {
   if (!ctx || !G.sfx || !buf[name]) return;
   const s = ctx.createBufferSource(); s.buffer = buf[name];

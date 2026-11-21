@@ -54,7 +54,7 @@ class Drone extends Enemy {
   }
   update(dt) {
     this.tickFlash(dt); this.stun = Math.max(0, this.stun - dt);
-    const tp = V1.copy(PL.pos); tp.y += 1.4;
+    const tp = V1.copy(PL.pos); tp.y += PL.aimH ?? 1.4;
     const to = V2.subVectors(this.p, tp); to.y = 0; const d = to.length() || 1;
     // 플레이어 둘레를 돌며 거리 유지 + 가끔 고도 바꿈
     const tang = V3.set(-to.z, 0, to.x).multiplyScalar(this.orbitDir / d);
@@ -196,7 +196,7 @@ class Walker extends Enemy {
     if (this.fireT <= 0 && this.stun <= 0) {
       this.fireT = rand(2.8, 3.6);
       const from = (this.cannon ? this.cannon.getWorldPosition(new THREE.Vector3()) : this.hitboxes[0].c.clone().add(V3.set(0, 0.4, 0)));
-      const tp = V2.copy(PL.pos); tp.y += 1.1; const dirv = tp.sub(from); const dist = dirv.length(); dirv.normalize();
+      const tp = V2.copy(PL.pos); tp.y += (PL.aimH ?? 1.4) - 0.3; const dirv = tp.sub(from); const dist = dirv.length(); dirv.normalize();
       if (rayWorld(from, dirv, dist) >= dist - 0.6) {
         const n = this.boss ? 3 : 1;
         for (let k = 0; k < n; k++) { const dv = dirv.clone().applyAxisAngle(V3.set(0, 1, 0), (k - (n - 1) / 2) * 0.12); enemyShot(from.clone(), dv.multiplyScalar(13), 22, 0.26, 0xff7a10, 2.6); }
@@ -217,6 +217,7 @@ export function spawn(kind, gate, elite = false) {
   const gt = GATES[gate % GATES.length]; gt.flash = 1;
   const at = gt.spawn.clone().add(V1.set(rand(-1.2, 1.2), 0, rand(-1.2, 1.2)));
   const e = kind === 'drone' ? new Drone(at, elite) : kind === 'walker' ? new Walker(at, elite) : new Crawler(at, elite);
+  e.m.traverse((o) => { if (o.isMesh) o.castShadow = true; });     // 그래픽 '높음'에서 바닥에 그림자
   enemies.push(e); return e;
 }
 export function updateEnemies(dt) {
@@ -229,7 +230,7 @@ export function updateEnemies(dt) {
     const wall = rayWorld(s.p, dirv, step + s.r);
     const np = V2.copy(s.p).addScaledVector(s.v, dt);
     // 플레이어 (몸통 캡슐 근사)
-    const pc = V3.set(PL.pos.x, clamp(np.y, PL.pos.y + 0.3, PL.pos.y + 1.6), PL.pos.z);
+    const pc = V3.set(PL.pos.x, clamp(np.y, PL.pos.y + 0.3, PL.pos.y + (PL.bodyTop ?? 1.6)), PL.pos.z);
     if (np.distanceTo(pc) < 0.45 + s.r) { PL.hurt(s.dmg, s.p); burst(s, np); continue; }
     let hitM = null; for (const m of SQ) { if (m.down) continue; if (Math.hypot(np.x - m.p.x, np.z - m.p.z) < 0.42 + s.r && np.y > m.y && np.y < m.y + 1.9) { hitM = m; break; } }
     if (hitM) { hitM.hurt(s.dmg * 0.8); burst(s, np); continue; }
@@ -241,7 +242,7 @@ export function updateEnemies(dt) {
 function burst(s, at) {
   s.alive = false; s.m.visible = false;
   sparks(at, 8, s.splash ? 0xff8a20 : 0xff5030, 4);
-  if (s.splash) { explosion(at, 0.8, 0xff7a10); const d = at.distanceTo(V1.copy(PL.pos).setY(PL.pos.y + 1)); if (d < s.splash) PL.hurt(s.dmg * 0.6 * (1 - d / s.splash), at); }
+  if (s.splash) { explosion(at, 0.8, 0xff7a10); const d = at.distanceTo(V1.copy(PL.pos).setY(PL.pos.y + (PL.bodyTop ?? 1.6) - 0.6)); if (d < s.splash) PL.hurt(s.dmg * 0.6 * (1 - d / s.splash), at); }
 }
 // 히트스캔: 광선이 맞힌 가장 가까운 적(관통 n) / 벽
 const _sc = new THREE.Vector3();

@@ -7,13 +7,20 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { G, ARENA } from './state.js';
 
-let composer, bloom;
+let composer = null, bloom = null, sun = null, Q = null;
+// 화질 단계: 해상도 배율 · 번짐(블룸) · 계단 현상 줄이기(MSAA) · 그림자
+const QL = {
+  low: { pr: () => Math.min(devicePixelRatio, 1) * 0.8, post: false, msaa: 0, shadow: false },
+  mid: { pr: () => Math.min(devicePixelRatio, G.touch ? 1.6 : 1.25), post: true, msaa: 0, shadow: false },
+  high: { pr: () => Math.min(devicePixelRatio, 2), post: true, msaa: 4, shadow: true },
+};
 export function initRenderer(canvas) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: !G.touch, powerPreference: 'high-performance' });
-  r.setPixelRatio(Math.min(devicePixelRatio, G.touch ? 1.6 : 2));
+  r.setPixelRatio(Math.min(devicePixelRatio, 1.25));
   r.setSize(innerWidth, innerHeight, false);
   r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05; r.outputColorSpace = THREE.SRGBColorSpace;
   r.autoClear = false;
+  r.shadowMap.type = THREE.PCFSoftShadowMap;
   G.renderer = r;
   const s = new THREE.Scene(); G.scene = s;
   s.background = new THREE.Color(0x0b121a); s.fog = new THREE.FogExp2(0x0d1620, 0.022);
@@ -21,27 +28,39 @@ export function initRenderer(canvas) {
   const pm = new THREE.PMREMGenerator(r); const env = pm.fromScene(new RoomEnvironment(), 0.04).texture; G.env = env;
   s.environment = env; s.environmentIntensity = 0.35;
   s.add(new THREE.HemisphereLight(0x9fc4e8, 0x1a1410, 0.9));
-  const sun = new THREE.DirectionalLight(0xfff1dc, 1.6); sun.position.set(14, 30, 8); s.add(sun);
+  sun = new THREE.DirectionalLight(0xfff1dc, 1.6); sun.position.set(14, 30, 8); s.add(sun);
+  sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.035;
+  const sc = sun.shadow.camera; sc.left = -32; sc.right = 32; sc.top = 32; sc.bottom = -32; sc.near = 1; sc.far = 80; sc.updateProjectionMatrix();
   const rim = new THREE.DirectionalLight(0x5aa8ff, 0.5); rim.position.set(-20, 12, -16); s.add(rim);
-  composer = new EffectComposer(r);
-  composer.addPass(new RenderPass(s, cam));
+}
+function buildComposer(msaa) {
+  if (composer) { composer.dispose(); bloom?.dispose(); }
+  const r = G.renderer, pr = r.getPixelRatio();
+  const rt = new THREE.WebGLRenderTarget(Math.max(1, innerWidth * pr), Math.max(1, innerHeight * pr), { type: THREE.HalfFloatType, samples: msaa });
+  composer = new EffectComposer(r, rt);
+  composer.addPass(new RenderPass(G.scene, G.camera));
   bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.7, 0.45, 0.82);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
+}
+export function setQuality(name) {
+  if (Q === name || !QL[name]) return;
+  const prev = Q && QL[Q], q = QL[name]; Q = name;
+  const r = G.renderer; r.setPixelRatio(q.pr());
+  if (!composer || prev.msaa !== q.msaa) buildComposer(q.msaa);
+  if (!prev || prev.shadow !== q.shadow) {
+    r.shadowMap.enabled = q.shadow; sun.castShadow = q.shadow;
+    G.scene.traverse((o) => { const m = o.material; if (m) for (const x of Array.isArray(m) ? m : [m]) x.needsUpdate = true; });
+  }
   resize();
 }
+export const quality = () => Q;
 export function resize() {
   const r = G.renderer; r.setSize(innerWidth, innerHeight, false);
   G.camera.aspect = innerWidth / innerHeight; G.camera.updateProjectionMatrix();
-  composer.setSize(innerWidth, innerHeight); composer.setPixelRatio(r.getPixelRatio());
-  bloom.resolution.set(innerWidth / 2, innerHeight / 2);
+  if (composer) { composer.setPixelRatio(r.getPixelRatio()); composer.setSize(innerWidth, innerHeight); }
 }
-let LQ = false;
-export function setLowQuality(on) {          // 느린 기기: 번짐 효과 끄고 해상도 낮춤
-  if (LQ === on) return; LQ = on;
-  G.renderer.setPixelRatio(on ? Math.min(devicePixelRatio, 1.15) : Math.min(devicePixelRatio, G.touch ? 1.6 : 2)); resize();
-}
-export function renderWorld() { G.renderer.clear(); if (LQ) G.renderer.render(G.scene, G.camera); else composer.render(); }
+export function renderWorld() { G.renderer.clear(); if (!QL[Q]?.post) G.renderer.render(G.scene, G.camera); else composer.render(); }
 
 // ── 절차 텍스처 ─────────────────────────────────────────
 function canvasTex(w, h, draw, rep = [1, 1]) {
@@ -110,8 +129,10 @@ function uvBox(w, h, d) {             // 크기에 맞춰 UV 를 늘려 텍스�
   }
   return g;
 }
+const isGlow = (m) => m === mats.glowB || m === mats.glowO || m === mats.glowR;
 export function addBox(x, y, z, w, h, d, mat, solid = true, uvScale = true) {
   const m = new THREE.Mesh(uvScale ? uvBox(w, h, d) : boxGeo, mat);
+  m.castShadow = m.receiveShadow = !isGlow(mat);
   if (!uvScale) m.scale.set(w, h, d);
   m.position.set(x, y + h / 2, z); G.scene.add(m);
   if (solid) G.boxes.push({ min: new THREE.Vector3(x - w / 2, y, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h, z + d / 2), m });
@@ -121,7 +142,7 @@ export const GATES = [];
 export function buildArena() {
   makeMats();
   const H = ARENA.half, WH = ARENA.wallH;
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(H * 2, H * 2), mats.floor); fl.rotation.x = -Math.PI / 2; G.scene.add(fl);
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(H * 2, H * 2), mats.floor); fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; G.scene.add(fl);
   // 바닥 안전선 (빛나는 띠)
   for (const s of [-1, 1]) { addBox(s * (H - 1.2), 0, 0, 0.12, 0.02, H * 2 - 2.4, mats.glowO, false, false); addBox(0, 0, s * (H - 1.2), H * 2 - 2.4, 0.02, 0.12, mats.glowO, false, false); }
   // 벽 + 출입구 틀
@@ -138,7 +159,7 @@ export function buildArena() {
   // 출입구 4곳: 벽에 박힌 문틀 + 경고등 (적이 여기서 나옴)
   for (const [x, z, ry] of [[0, -H, 0], [0, H, Math.PI], [-H, 0, Math.PI / 2], [H, 0, -Math.PI / 2]]) {
     const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; G.scene.add(g);
-    const fr = (px, py, w, h, m) => { const b = new THREE.Mesh(boxGeo, m); b.scale.set(w, h, 0.5); b.position.set(px, py, 0.1); g.add(b); return b; };
+    const fr = (px, py, w, h, m) => { const b = new THREE.Mesh(boxGeo, m); b.scale.set(w, h, 0.5); b.position.set(px, py, 0.1); b.castShadow = b.receiveShadow = !isGlow(m); g.add(b); return b; };
     fr(0, 2.1, 4.6, 4.2, mats.dark); const door = fr(0, 1.9, 3.8, 3.8, mats.metal); door.position.z = 0.32;
     for (let k = 0; k < 6; k++) { const s = fr(0, 0.5 + k * 0.6, 3.6, 0.06, mats.dark); s.position.z = 0.6; }
     const l1 = fr(-2.15, 2.1, 0.14, 4.0, mats.glowR), l2 = fr(2.15, 2.1, 0.14, 4.0, mats.glowR); l1.position.z = l2.position.z = 0.42;
@@ -169,7 +190,7 @@ export function buildArena() {
   crate(-6.5, -7, 1.2, 1.2); crate(7, 6.5, 1.2, 1.2, false, mats.crate2);
   // 벽 쪽 장식: 큰 연료통·선반
   for (const [x, z] of [[-19.5, 8], [19.5, -8], [8, 19.5], [-8, -19.5]]) {
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 3, 20), mats.metal); t.position.set(x, 1.5, z); G.scene.add(t);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 3, 20), mats.metal); t.position.set(x, 1.5, z); t.castShadow = t.receiveShadow = true; G.scene.add(t);
     const b1 = new THREE.Mesh(new THREE.CylinderGeometry(1.13, 1.13, 0.16, 20), mats.glowO); b1.position.set(x, 2.4, z); G.scene.add(b1);
     G.boxes.push({ min: new THREE.Vector3(x - 1.1, 0, z - 1.1), max: new THREE.Vector3(x + 1.1, 3, z + 1.1), m: t });
   }

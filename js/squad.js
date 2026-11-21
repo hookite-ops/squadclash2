@@ -85,6 +85,9 @@ class Mate {
     this.p.x += this.v.x * dt; this.p.z += this.v.z * dt;
     this.vy -= 16 * dt; this.y += this.vy * dt;
     const g = groundAt(this.p.x, this.p.z, this.y + 0.1, 0.35, 0.5); if (this.y < g) { this.y = g; this.vy = 0; }
+    // 플레이어와 겹치지 않게 분대원이 비켜섬 (슬라이딩으로 몸속에 들어가 보이는 것 방지)
+    const px = this.p.x - PL.pos.x, pz = this.p.z - PL.pos.z, pd = Math.hypot(px, pz);
+    if (pd < 0.85 && Math.abs(PL.pos.y - this.y) < 1.6) { if (pd > 1e-4) { this.p.x += px / pd * (0.85 - pd); this.p.z += pz / pd * (0.85 - pd); } else this.p.x += 0.85; this.goalT = Math.min(this.goalT, 0.3); }
     if (collideCircle(this.p, 0.4, this.y, 1.9, 0.5) && sp > 0) this.goalT = Math.min(this.goalT, 0.4);
     const spd = Math.hypot(this.v.x, this.v.z); this.walk += dt * spd * 2.8;
     // 몸 방향: 적이 있으면 적, 없으면 걷는 쪽
@@ -117,7 +120,7 @@ class Mate {
     } else this.burst = 0;
   }
 }
-export function initSquad(player) { PL = player; for (let i = 0; i < 2; i++) squad.push(new Mate(i)); }
+export function initSquad(player) { PL = player; for (let i = 0; i < 2; i++) squad.push(new Mate(i)); for (const m of squad) m.g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); }
 export function resetSquad() {
   squad.forEach((m, i) => { m.revive(); m.p.set(i ? 2.2 : -2.2, 1.05, 3.2); m.y = 1.05; m.v.set(0, 0, 0); m.target = null; m.ry = Math.PI; m.g.position.copy(m.p); });
 }
