@@ -5,6 +5,7 @@
 // 가까이는 4.4만 삼각형, 17m 넘게 멀어지면 1.7만 삼각형 모델로 바뀐다 (LOD). 로봇 하나 = 그리기 4번.
 import * as THREE from './vendor/three.module.js';
 import { GLTFLoader } from './vendor/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from './vendor/addons/libs/meshopt_decoder.module.js';
 import { dollUV } from './paint.js';
 import { gunEnv } from './guns.js';
 
@@ -37,7 +38,7 @@ const PENDING = new Set();
 export const robotReady = () => !!SRC;
 export function loadRobot() {
   if (LOADING) return LOADING;
-  const ld = new GLTFLoader();
+  const ld = new GLTFLoader(); ld.setMeshoptDecoder(MeshoptDecoder); // 모델은 meshopt 로 압축됨 (자리값이 정수로 줄어 있음)
   LOADING = Promise.all([ld.loadAsync('assets/robot.glb'), ld.loadAsync('assets/robot_lo.glb')]).then(([hi, lo]) => {
     SRC = { hi: buildSet(hi.scene), lo: buildSet(lo.scene) };
     for (const r of PENDING) fill(r);
@@ -46,6 +47,18 @@ export function loadRobot() {
   return LOADING;
 }
 
+// 압축(정수) 자리값을 실수로 풀면서 몸 기준 자리로 옮김
+function floatGeo(src, M) {
+  const a = src.attributes.position, n = src.attributes.normal, c = a.count, pos = new Float32Array(c * 3), nor = new Float32Array(c * 3), v = new THREE.Vector3(), NM = new THREE.Matrix3().getNormalMatrix(M);
+  for (let i = 0; i < c; i++) {
+    v.set(a.getX(i), a.getY(i), a.getZ(i)).applyMatrix4(M); pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+    if (n) { v.set(n.getX(i), n.getY(i), n.getZ(i)).applyMatrix3(NM).normalize(); nor[i * 3] = v.x; nor[i * 3 + 1] = v.y; nor[i * 3 + 2] = v.z; }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  if (src.index) g.setIndex(new THREE.BufferAttribute(Uint32Array.from({ length: src.index.count }, (_, i) => src.index.getX(i)), 1));
+  return g;
+}
 // 부위·재질별 메시 → 재질 종류마다 하나로 합친 뼈대 메시 자료 (모든 로봇이 같이 씀)
 function buildSet(root) {
   root.updateMatrixWorld(true);
@@ -54,7 +67,7 @@ function buildSet(root) {
     if (!o.isMesh) return;
     const [seg, mn] = o.name.split('__'), bone = BONES.indexOf(SEG_BONE[seg]);
     if (bone < 0 || !mn) return;
-    const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+    const g = floatGeo(o.geometry, o.matrixWorld);
     const kind = mn.endsWith('armor') ? 'armor' : mn.endsWith('glow') ? 'glow' : mn.endsWith('visor') ? 'visor' : 'mech';
     parts.push({ seg, g, bone, kind, col: o.material && o.material.color ? o.material.color.clone() : new THREE.Color(0.15, 0.16, 0.18) });
   });

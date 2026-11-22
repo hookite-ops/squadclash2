@@ -40,7 +40,7 @@ initGunEnv(renderer);
 loadRobot(); // 휴머노이드 로봇 몸 모델 (robot.js) — 메뉴에 있는 동안 받아 둠
 setWorldQuality(gfx, renderer);
 // 후처리(빛 번짐·선명도·색 보정). 화질 '낮음'은 쓰지 않고 바로 화면에 그림
-const post = gfx === 'low' ? null : makePost(renderer, { samples: gfx === 'high' ? 4 : 2, levels: gfx === 'high' ? 5 : 3 });
+const post = gfx === 'low' ? null : makePost(renderer, { samples: gfx === 'high' ? 4 : 2, levels: gfx === 'high' ? 5 : 3, ao: gfx === 'high' }); // '높음'은 화면 공간 그늘(SSAO)까지
 let postOn = !!post && post.active;
 const GRADE_UI = { bloom: 0.4, thresh: 1.0, sat: 1.04, con: 1.03, vig: 0.34, grain: 0.008 }; // 무기고·캐릭터 그리기 화면
 function present(draw, now, grade) { // 그리기 함수를 후처리를 거쳐(또는 바로) 화면에 내보냄
@@ -2104,8 +2104,9 @@ function updateFx(dt) {
 
 let lastT = performance.now(), lastSend = 0, menuAng = 0, perfT = 0, perfN = 0, perfFrom = 0, perfFast = 0;
 const drawVm = () => { renderer.setClearColor(0x161a21, 1); renderer.clear(); renderer.render(vmScene, vmCam); };
-const drawWorld = () => { renderer.clear(); renderer.render(scene, camera); };
-const drawGame = () => { renderer.clear(); renderer.render(scene, camera); renderer.clearDepth(); renderer.render(vmScene, vmCam); };
+const occ = () => { if (postOn) post.occlude(camera); }; // 구석 그늘 (세상만 그린 깊이로)
+const drawWorld = () => { renderer.clear(); renderer.render(scene, camera); occ(); };
+const drawGame = () => { renderer.clear(); renderer.render(scene, camera); occ(); renderer.clearDepth(); renderer.render(vmScene, vmCam); };
 // 화질 자동 조절. 느리면 한 단계씩 낮춤: 계단 현상 줄이기(다중 표본 → 가벼운 FXAA) → 해상도 → 빛 번짐 줄임 → 해상도(조금씩) → 후처리 끔
 // 오래 넉넉하면 해상도를 다시 올림 (고해상도 휴대폰 화면이 한 번 느려졌다고 끝까지 흐릿하지 않게)
 const DPR = window.devicePixelRatio || 1, PR_MAX = Math.min(DPR, gfx === 'low' ? 1 : gfx === 'mid' ? (isTouch ? 2 : 1.5) : 2), PR_MIN = Math.min(DPR, isTouch && gfx !== 'low' ? 1.25 : 1);

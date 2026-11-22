@@ -100,6 +100,54 @@ void main() {
   gl_FragColor = vec4( clamp( o, 0.0, 1.0 ), 1.0 );
 }`;
 
+// 화면 공간 그늘(SSAO, 화질 '높음'): 세상만 그린 직후의 깊이로, 구석·물체 밑·벽이 만나는 곳을 어둡게 한다 (1인칭 무기는 뒤에 그려서 빠짐)
+// 반 해상도에서 12번 표본 → 깊이를 보며 흐리기 → 원래 화면에 곱하기
+const AO_FS = `
+uniform sampler2D tDepth; uniform mat4 uProj; uniform mat4 uProjInv; uniform float uRadius;
+varying vec2 vUv;
+vec3 vpos( vec2 uv, float d ) { vec4 p = uProjInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
+void main() {
+  float d = texture2D( tDepth, vUv ).r;
+  if ( d >= 0.99999 ) { gl_FragColor = vec4( 1.0 ); return; }
+  vec3 P = vpos( vUv, d );
+  vec3 N = normalize( cross( dFdx( P ), dFdy( P ) ) );
+  if ( dot( N, P ) > 0.0 ) N = -N;
+  float fade = 1.0 - smoothstep( 32.0, 64.0, -P.z );
+  if ( fade <= 0.0 ) { gl_FragColor = vec4( 1.0 ); return; }
+  vec3 T = normalize( abs( N.y ) < 0.95 ? cross( N, vec3( 0.0, 1.0, 0.0 ) ) : cross( N, vec3( 1.0, 0.0, 0.0 ) ) ), B = cross( N, T );
+  float a0 = 6.2831853 * fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+  float occ = 0.0;
+  for ( int i = 0; i < 12; i ++ ) {
+    float fi = float( i ), t = ( fi + 0.5 ) / 12.0, ang = a0 + fi * 2.399963, r = sqrt( t );
+    vec3 dir = T * ( cos( ang ) * r ) + B * ( sin( ang ) * r ) + N * sqrt( max( 0.0, 1.0 - t ) );
+    vec3 S = P + dir * uRadius * ( 0.25 + 0.75 * fract( t * 7.31 + a0 * 0.159 ) );
+    vec4 sp = uProj * vec4( S, 1.0 ); vec2 su = sp.xy / sp.w * 0.5 + 0.5;
+    if ( su.x < 0.0 || su.y < 0.0 || su.x > 1.0 || su.y > 1.0 ) continue;
+    vec3 Q = vpos( su, texture2D( tDepth, su ).r );
+    occ += step( 0.02 - P.z * 0.0015, Q.z - S.z ) * smoothstep( 0.0, 1.0, uRadius / max( abs( P.z - Q.z ), 1e-3 ) );
+  }
+  float ao = mix( 1.0, clamp( 1.0 - occ / 12.0 * 1.35, 0.0, 1.0 ), fade );
+  gl_FragColor = vec4( ao, ao, ao, 1.0 );
+}`;
+const AOBLUR_FS = `
+uniform sampler2D tAO; uniform sampler2D tDepth; uniform mat4 uProjInv; uniform vec2 uTexel;
+varying vec2 vUv;
+float lz( vec2 uv ) { vec4 p = uProjInv * vec4( uv * 2.0 - 1.0, texture2D( tDepth, uv ).r * 2.0 - 1.0, 1.0 ); return p.z / p.w; }
+void main() {
+  float z0 = lz( vUv ), sum = 0.0, ws = 0.0, tol = 0.035 * abs( z0 ) + 0.06;
+  for ( int x = -2; x <= 1; x ++ ) for ( int y = -2; y <= 1; y ++ ) {
+    vec2 o = ( vec2( float( x ), float( y ) ) + 0.5 ) * uTexel;
+    float w = max( 0.0, 1.0 - abs( lz( vUv + o ) - z0 ) / tol );
+    sum += texture2D( tAO, vUv + o ).r * w; ws += w;
+  }
+  float ao = ws > 0.001 ? sum / ws : 1.0;
+  gl_FragColor = vec4( ao, ao, ao, 1.0 );
+}`;
+const AOMIX_FS = `
+uniform sampler2D tAO; uniform float uStrength;
+varying vec2 vUv;
+void main() { float a = mix( 1.0, pow( texture2D( tAO, vUv ).r, 1.25 ), clamp( uStrength, 0.0, 1.0 ) ); gl_FragColor = vec4( a, a, a, 1.0 ); }`;
+
 // 색 보정 기본값. 맵마다 덮어쓴다 (setGrade)
 const GRADE0 = { bloom: 0.55, thresh: 1.0, knee: 0.35, sharp: 0.35, sat: 1.08, con: 1.06, vig: 0.22, grain: 0.012, gain: [1, 1, 1], lift: [0, 0, 0] };
 
@@ -110,7 +158,10 @@ export function makePost(renderer, opt = {}) {
   const type = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const mesh = new THREE.Mesh(tri, null); mesh.frustumCulled = false;
   let samples = Math.min(opt.samples || 0, caps.maxSamples || 0), levels = opt.levels === undefined ? 5 : opt.levels;
-  let main = null, chain = [], w = 0, h = 0, ok = true;
+  let main = null, chain = [], w = 0, h = 0, ok = true, aoOn = !!opt.ao && caps.isWebGL2 !== false, aoA = null, aoB = null;
+  const mAo = mat({ fragmentShader: AO_FS, uniforms: { tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uProjInv: { value: new THREE.Matrix4() }, uRadius: { value: 0.95 } } });
+  const mAoBlur = mat({ fragmentShader: AOBLUR_FS, uniforms: { tAO: { value: null }, tDepth: { value: null }, uProjInv: { value: new THREE.Matrix4() }, uTexel: { value: new THREE.Vector2() } } });
+  const mAoMix = mat({ fragmentShader: AOMIX_FS, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor, uniforms: { tAO: { value: null }, uStrength: { value: 0.9 } } });
   const mPre = mat({ fragmentShader: DOWN, defines: { PREFILTER: 1 }, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThresh: { value: 1 }, uKnee: { value: 0.35 } } });
   const mDown = mat({ fragmentShader: DOWN, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThresh: { value: 0 }, uKnee: { value: 0 } } });
   const mUp = mat({ fragmentShader: UP, blending: THREE.AdditiveBlending, transparent: true, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } } });
@@ -119,13 +170,18 @@ export function makePost(renderer, opt = {}) {
     uGain: { value: new THREE.Vector3(1, 1, 1) }, uLift: { value: new THREE.Vector3(0, 0, 0) }, uSunView: { value: new THREE.Vector3(0, 0, 1) }, uGlare: { value: new THREE.Vector3(0, 0, 0) }, uProj: { value: new THREE.Vector2(1, 1) } } });
   const grade = { ...GRADE0 };
 
-  function free() { if (main) main.dispose(); for (const t of chain) t.dispose(); main = null; chain = []; }
+  function free() { if (main) { if (main.depthTexture) main.depthTexture.dispose(); main.dispose(); } for (const t of chain) t.dispose(); if (aoA) { aoA.dispose(); aoB.dispose(); } main = null; chain = []; aoA = aoB = null; }
   function alloc() {
     free();
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     w = Math.max(2, size.x); h = Math.max(2, size.y);
-    main = new THREE.WebGLRenderTarget(w, h, { type, samples, depthBuffer: true, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    main = new THREE.WebGLRenderTarget(w, h, { type, samples, depthBuffer: true, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthTexture: aoOn ? new THREE.DepthTexture(w, h) : null });
     main.texture.generateMipmaps = false;
+    if (aoOn) { // 그늘 계산용 반 해상도 버퍼 둘
+      const o = { type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+      aoA = new THREE.WebGLRenderTarget(Math.max(2, w >> 1), Math.max(2, h >> 1), o); aoB = new THREE.WebGLRenderTarget(Math.max(2, w >> 1), Math.max(2, h >> 1), o);
+      aoA.texture.generateMipmaps = aoB.texture.generateMipmaps = false;
+    }
     let cw = w, ch = h;
     for (let i = 0; i < levels; i++) {
       cw = Math.max(2, cw >> 1); ch = Math.max(2, ch >> 1);
@@ -150,6 +206,20 @@ export function makePost(renderer, opt = {}) {
     setGlare(dir, r, g, b, tanX, tanY) { const u = mFinal.uniforms; if (dir) u.uSunView.value.copy(dir); u.uGlare.value.set(r, g, b); u.uProj.value.set(tanX || 1, tanY || 1); },
     grade,
     resize() { main = null; },
+    get ao() { return aoOn; },
+    setAo(on) { on = !!on && caps.isWebGL2 !== false; if (on !== aoOn) { aoOn = on; main = null; } },
+    // 세상을 다 그린 직후(1인칭 무기를 그리기 전)에 불러 구석 그늘을 화면에 곱함
+    occlude(camera) {
+      if (!aoOn || !main || !main.depthTexture || !aoA) return;
+      const tgt = renderer.getRenderTarget();
+      mAo.uniforms.tDepth.value = main.depthTexture; mAo.uniforms.uProj.value.copy(camera.projectionMatrix); mAo.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
+      pass(mAo, aoA);
+      const bu = mAoBlur.uniforms; bu.tAO.value = aoA.texture; bu.tDepth.value = main.depthTexture; bu.uProjInv.value.copy(camera.projectionMatrixInverse); bu.uTexel.value.set(1 / aoA.width, 1 / aoA.height);
+      pass(mAoBlur, aoB);
+      mAoMix.uniforms.tAO.value = aoB.texture; mAoMix.uniforms.uStrength.value = grade.ao === undefined ? 1 : grade.ao;
+      pass(mAoMix, main);
+      renderer.setRenderTarget(tgt);
+    },
     // 장면을 그릴 버퍼로 바꿈. 이 뒤에 평소처럼 renderer.render(...) 를 부르면 된다
     begin() {
       const size = renderer.getDrawingBufferSize(new THREE.Vector2());
