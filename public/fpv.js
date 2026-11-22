@@ -10,7 +10,7 @@ const D2R = Math.PI / 180;
 const PIS = { pos: [0.088, -0.092, -0.285], rot: [1.5, 4, -2] }, SMG = { pos: [0.106, -0.12, -0.245], rot: [1.5, 4, -3] };
 const RIF = { pos: [0.13, -0.14, -0.25], rot: [1.5, 4, -3] }, BIG = { pos: [0.14, -0.15, -0.25], rot: [1.5, 4, -3] };
 const KNF = { pos: [0.1, -0.11, -0.3], rot: [8, 6, -6] };
-const HIP = { hx9: PIS, swarm: PIS, whisper: PIS, wasp: SMG, mist: SMG, hammer: BIG, tempest: BIG, sentinel: RIF, nightfall: RIF, titan: RIF, falcon: RIF, rail: BIG, storm: BIG, blitz: BIG, razor: KNF };
+const HIP = { hx9: PIS, swarm: PIS, whisper: PIS, punk: PIS, highnoon: PIS, wasp: SMG, mist: SMG, hammer: BIG, tempest: BIG, sentinel: RIF, nightfall: RIF, titan: RIF, hail: RIF, falcon: RIF, rail: BIG, storm: BIG, blitz: BIG, razor: KNF };
 // 정조준 때 조준점이 오는 깊이 (화면 앞쪽 거리, m): 가늠쇠는 멀리, 도트·조준경은 가까이
 const ADSZ = { trit: -0.42, pistol: -0.34, dot_lens: -0.2, lens_f: -0.28, none: -0.62 };
 // 왼손 손가락이 가늠쇠보다 높이 올라오는 무기는 조준점을 손 위로 살짝 올림 (가늠쇠가 조준점 바로 아래에 보임)
@@ -21,9 +21,12 @@ const SND = {
   rifle: { Draw: [[0.57, 'clunk'], [0.62, 'click']], Reload: [[0.22, 'click'], [0.26, 'clunk'], [1.30, 'clunk'], [1.36, 'click']], ReloadEmpty: [[0.22, 'click'], [0.26, 'clunk'], [1.30, 'clunk'], [1.36, 'click'], [1.62, 'slide']] },
   pump: { Fire: [[0.30, 'slide'], [0.43, 'clunk']], Draw: [[0.57, 'clunk']], Reload: [[0.84, 'shell'], [1.46, 'shell'], [2.08, 'shell']], ReloadEmpty: [[0.70, 'shell'], [0.86, 'clunk'], [1.39, 'shell'], [2.01, 'shell'], [2.63, 'shell']] },
   bolt_rail: { Fire: [[0.54, 'click'], [0.657, 'slide'], [0.68, 'click'], [0.92, 'clunk'], [1.06, 'slide'], [1.23, 'clunk'], [1.3, 'shell'], [1.34, 'click']], ReloadEmpty: [[0.22, 'click'], [0.26, 'clunk'], [1.3, 'clunk'], [1.8, 'click'], [1.917, 'slide'], [1.94, 'click'], [2.18, 'clunk'], [2.32, 'slide'], [2.49, 'clunk'], [2.6, 'click']], Reload: [[0.22, 'click'], [0.26, 'clunk'], [1.3, 'clunk'], [1.36, 'click']], Draw: [[0.57, 'clunk']] },
+  brk: { Draw: [[0.46, 'click']], Reload: [[0.15, 'click'], [0.33, 'clunk'], [1.15, 'shell'], [1.19, 'shell'], [1.42, 'clunk'], [1.45, 'click']] },   // 꺾기: 레버·꺾임·두 발·닫힘
+  rev: { Draw: [[0.46, 'click']], Fire: [[0.02, 'click']], Reload: [[0.10, 'click'], [0.30, 'slide'], [0.50, 'shell'], [0.53, 'shell'], [1.40, 'shell'], [1.66, 'clunk'], [1.69, 'click']] }, // 리볼버: 래치·실린더·이젝터·스피드로더·닫힘
+  knife: { Draw: [[0.36, 'slide']], Inspect: [[2.6, 'slide']] },
   bolt_falcon: { Fire: [[0.495, 'click'], [0.598, 'slide'], [0.613, 'click'], [0.818, 'clunk'], [0.94, 'slide'], [1.082, 'clunk'], [1.175, 'click'], [1.198, 'shell']], ReloadEmpty: [[0.22, 'click'], [0.26, 'clunk'], [1.3, 'clunk'], [1.755, 'click'], [1.858, 'slide'], [1.873, 'click'], [2.078, 'clunk'], [2.2, 'slide'], [2.341, 'clunk'], [2.435, 'click']], Reload: [[0.22, 'click'], [0.26, 'clunk'], [1.3, 'clunk'], [1.36, 'click']], Draw: [[0.57, 'clunk']] },
 };
-const SNDOF = { hx9: 'pistol', swarm: 'pistol', whisper: 'pistol', hammer: 'pump', falcon: 'bolt_falcon', rail: 'bolt_rail', razor: null };
+const SNDOF = { hx9: 'pistol', swarm: 'pistol', whisper: 'pistol', punk: 'brk', highnoon: 'rev', hammer: 'pump', falcon: 'bolt_falcon', rail: 'bolt_rail', razor: 'knife' };
 const ease = (v) => v * v * (3 - 2 * v);
 
 export function createFpv(vmScene, onSound = () => {}) {
@@ -40,18 +43,6 @@ export function createFpv(vmScene, onSound = () => {}) {
   function glassLens(scene) { // 렌즈 재질을 비치는 유리로 (처음 한 번)
     scene.traverse((o) => { if (!o.isMesh || !/lens/.test(o.name) || lensed.has(o)) return; lensed.add(o); const m = o.material.clone(); m.transparent = true; m.opacity = 0.16; m.depthWrite = false; m.metalness = 0.2; m.roughness = 0.05; if (m.emissive) m.emissiveIntensity = 0.15; o.material = m; o.renderOrder = 5; });
   }
-  let KN = null;
-  // 칼(레이저 나이프): 아직 전용 손·동작이 없어서, HX-9 손 동작에 권총 대신 칼을 쥐여 주고 왼팔은 내린다 (휘두르기는 코드)
-  async function knifeModel() {
-    if (KN) return KN;
-    const [h, r] = await Promise.all([loadModel('hx9'), loadModel('razor')]);
-    const scene = h.scene.clone(true), root = scene.getObjectByName('root');
-    root.traverse((o) => { if (o.isMesh) o.visible = false; });
-    const lu = scene.getObjectByName('l_upper'); if (lu) lu.visible = false;
-    const k = r.pristine.clone(true); k.rotation.x = Math.PI / 2; k.position.set(0, 0.004, 0.05); root.add(k);
-    KN = { scene, clips: h.clips, knife: k };
-    return KN;
-  }
   function play(name, { fade = 0.12, loop = false, ts = 1 } = {}) {
     const clip = S.clips[name]; if (!clip || !S.mixer) return null;
     const a = S.mixer.clipAction(clip);
@@ -61,7 +52,7 @@ export function createFpv(vmScene, onSound = () => {}) {
     else { if (S.action && S.action !== a) S.action.stop(); a.reset(); a.play(); }
     S.action = a; S.actName = name; S.clipT = 0;
     const t = (SND[SNDOF[S.id] ?? 'rifle'] || {})[name] || [];
-    S.evQ = S.knife ? [] : t.map((e) => [e[0] / ts, e[1]]).sort((x, y) => x[0] - y[0]);
+    S.evQ = t.map((e) => [e[0] / ts, e[1]]).sort((x, y) => x[0] - y[0]);
     return a;
   }
   // 무기 들기 (꺼내기 동작). si = 스킨 번호
@@ -70,12 +61,12 @@ export function createFpv(vmScene, onSound = () => {}) {
     const req = ++S.req; S.wi = wi; S.ready = false;
     const id = W.vm2, knife = !!W.melee;
     let m;
-    try { m = knife ? await knifeModel() : await loadModel(id); } catch { return; }
+    try { m = await loadModel(id); } catch { return; }
     if (req !== S.req) return; // 받는 사이 다른 무기로 바뀜
     if (S.model && S.model !== m.scene) wg.remove(S.model);
     if (S.mixer) S.mixer.stopAllAction();
     S.model = m.scene; wg.add(m.scene); glassLens(m.scene);
-    applySkin(knife ? m.knife : m.scene, si);
+    applySkin(m.scene, si);
     S.id = id; S.knife = knife; S.clips = m.clips;
     S.mixer = mixers.get(m.scene) || new THREE.AnimationMixer(m.scene); mixers.set(m.scene, S.mixer);
     S.action = null; S.actName = '';
@@ -92,7 +83,11 @@ export function createFpv(vmScene, onSound = () => {}) {
   // 사격: 볼트·펌프는 연사 간격에 맞춰 동작 속도를 맞춘다
   function fire(last) {
     const W = WEAPONS[S.wi]; if (!S.ready || !W) return;
-    if (W.melee) { S.swingT = 0; S.swingDir = -S.swingDir; return; }
+    if (W.melee) { // 칼: 베기 둘(오른 위→왼 아래 / 왼 아래→오른 위)을 번갈아. 휘두르는 간격에 동작 속도를 맞춤
+      S.swingDir = -S.swingDir; const nm = S.swingDir > 0 || !S.clips.Shot ? 'Fire' : 'Shot', cl = S.clips[nm];
+      if (!cl) { S.swingT = 0; return; }
+      play(nm, { fade: 0.03, ts: Math.max(1, (cl.duration * 0.9) / Math.max(0.2, (W.interval || 450) / 1000)) }); S.state = 'fire'; return;
+    }
     const name = last && S.clips.FireLast ? 'FireLast' : 'Fire', clip = S.clips[name]; if (!clip) return;
     let ts = 1;
     if (W.bolt) ts = Math.max(1, (clip.duration * 0.84) / (W.interval / 1000));
@@ -156,7 +151,6 @@ export function createFpv(vmScene, onSound = () => {}) {
     dot.visible = !!S.dot && ads > 0.55 && wg.visible;
     if (dot.visible && S.root) { dot.position.copy(S.sight).applyMatrix4(S.root.matrixWorld); dot.material.opacity = Math.min(1, (ads - 0.55) / 0.3); }
     if (S.flash) S.flash.getWorldPosition(muzzle);
-    else if (S.knife && KN) KN.knife.localToWorld(muzzle.set(0, 0.012, -0.25));
     if (S.root) S.root.localToWorld(eject.set(0.03, 0.12, 0.06));
   }
   const state = () => S.state;
