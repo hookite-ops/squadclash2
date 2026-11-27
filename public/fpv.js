@@ -3,8 +3,8 @@
 // 정조준하면 모델의 실제 조준점(가늠쇠 야광점·도트 렌즈·조준경 렌즈)과 총열 방향을 화면 한가운데에 맞춘다.
 import * as THREE from './vendor/three.module.js';
 import { WEAPONS } from './shared.js';
-import { loadModel, FIT, applySkin, skinFx, fadeMat } from './guns.js';
-import { fitParts, loadParts, MOUNT } from './attach.js';
+import { loadModel, FIT, applySkin, skinFx, fadeMat, skinModelId, loadSkinModel, wearSkin, skinNodesOf } from './guns.js';
+import { fitParts, loadParts, MOUNT, unfit, mountOf } from './attach.js';
 
 const D2R = Math.PI / 180;
 // 허리 자세 (무기고 19 갤러리와 같은 값: 총 뼈 위치·기울기)
@@ -29,6 +29,7 @@ const SND = {
 };
 const SNDOF = { hx9: 'pistol', swarm: 'pistol', whisper: 'pistol', punk: 'brk', highnoon: 'rev', hammer: 'pump', falcon: 'bolt_falcon', rail: 'bolt_rail', razor: 'knife' };
 const ease = (v) => v * v * (3 - 2 * v);
+const _X = new THREE.Vector3(1, 0, 0);
 
 export function createFpv(vmScene, onSound = () => {}) {
   const wg = new THREE.Group(); vmScene.add(wg);
@@ -51,6 +52,48 @@ export function createFpv(vmScene, onSound = () => {}) {
   function glassLens(scene) { // 렌즈 재질을 비치는 유리로 (처음 한 번)
     scene.traverse((o) => { if (!o.isMesh || !/lens/.test(o.name) || lensed.has(o)) return; lensed.add(o); const m = o.material.clone(); m.transparent = true; m.opacity = 0.16; m.depthWrite = false; m.metalness = 0.2; m.roughness = 0.05; if (m.emissive) m.emissiveIntensity = 0.15; o.material = m; o.renderOrder = 5; });
   }
+  // 구조 스킨의 움직이는 장치: 집게 총구(쏘면 벌어짐) · 열기 덮개(연사하면 열리고 빛남) · 외눈(정조준하면 밝아짐) · 탄약 표시창
+  const CLAW_A = { claw_u: 0, claw_l: 120, claw_r: -120 };
+  function gimmicks(root) {
+    const W = skinNodesOf(root), N = W && W.nodes; if (!N) return null;
+    const G = { fire: 0, heat: 0, claws: [], vents: [], glows: [], eyes: [], ammo: -1, scr: null };
+    const own = (o) => { o.traverse((m) => { if (m.isMesh && !m.userData.ownMat) { m.material = m.material.clone(); m.userData.ownMat = true; } }); return o; };
+    for (const k in CLAW_A) for (const o of N[k] || []) { const a = CLAW_A[k] * D2R; G.claws.push({ o, q0: o.quaternion.clone(), ax: new THREE.Vector3(Math.cos(a), 0, Math.sin(a)) }); }
+    for (let i = 0; N['vent' + i]; i++) for (const o of N['vent' + i]) G.vents.push({ o, q0: o.quaternion.clone(), i });
+    for (const o of N.heat || []) { own(o); o.traverse((m) => { if (m.isMesh) G.glows.push({ m: m.material, k: m.material.emissiveIntensity }); }); }
+    for (const o of N.eye || []) { own(o); o.traverse((m) => { if (m.isMesh) G.eyes.push({ m: m.material, k: m.material.emissiveIntensity }); }); }
+    const scr = (N.screen || []).find((o) => { let e = false; o.traverse((m) => { if (m.isMesh && m.material.emissive && m.material.emissive.getHex() !== 0) e = true; }); return e; });
+    if (scr) { // 표시창 글자: 모델의 "30" 대신 남은 탄약을 그림
+      scr.visible = false;
+      const c = document.createElement('canvas'); c.width = 128; c.height = 96; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+      const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.029, 0.0218), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false }));
+      pl.position.copy(scr.position); pl.position.x -= 0.0001; pl.rotation.set(0, -Math.PI / 2, 0); pl.name = 'skin_ammo'; pl.renderOrder = 3; // 왼쪽 면(-x)을 봄
+      root.add(pl); W.added.push(pl);
+      G.scr = { c, g: c.getContext('2d'), tex };
+    }
+    return G;
+  }
+  function drawAmmo(G, n, mag) {
+    const { g, c, tex } = G.scr; g.clearRect(0, 0, c.width, c.height);
+    const low = mag > 0 && n <= Math.ceil(mag * 0.25);
+    g.font = '700 64px ui-monospace, Menlo, Consolas, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = low ? 'rgba(255,40,30,0.9)' : 'rgba(255,140,40,0.9)'; g.shadowBlur = 10;
+    g.fillStyle = low ? '#ff4a3a' : '#ffb04a'; g.fillText(String(Math.max(0, n)).padStart(2, '0'), 64, 44);
+    g.shadowBlur = 0; g.fillStyle = 'rgba(255,170,80,0.55)'; const w = mag > 0 ? Math.round(104 * Math.max(0, n) / mag) : 0; g.fillRect(12, 80, w, 6);
+    tex.needsUpdate = true;
+  }
+  function setAmmo(n, mag) { const G = S.gk; if (!G || !G.scr || (G.ammo === n && G.mag === mag)) return; G.ammo = n; G.mag = mag; drawAmmo(G, n, mag); }
+  const _gq = new THREE.Quaternion();
+  function tickGimmicks(dt, ads) {
+    const G = S.gk; if (!G) return;
+    G.fire *= Math.exp(-dt * 13); G.heat = Math.max(0, G.heat - dt * 0.32);
+    const open = 0.42 * Math.min(1, G.fire * 1.4);
+    for (const c of G.claws) c.o.quaternion.copy(c.q0).multiply(_gq.setFromAxisAngle(c.ax, open));
+    const h = G.heat * G.heat * (3 - 2 * G.heat);
+    for (const v of G.vents) v.o.quaternion.copy(v.q0).multiply(_gq.setFromAxisAngle(_X, -(0.08 + 0.95 * Math.min(1, h * 1.15 + v.i * 0.02))));
+    for (const g of G.glows) g.m.emissiveIntensity = g.k * (0.35 + 1.5 * h);
+    for (const e of G.eyes) e.m.emissiveIntensity = e.k * ((1 - 0.65 * ads) + 0.08 * Math.sin(S.clipT * 7.3)); // 정조준하면 외눈 고리를 낮춰 빛 번짐이 가늠구멍을 가리지 않게
+  }
   function play(name, { fade = 0.12, loop = false, ts = 1 } = {}) {
     const clip = S.clips[name]; if (!clip || !S.mixer) return null;
     const a = S.mixer.clipAction(clip);
@@ -68,13 +111,17 @@ export function createFpv(vmScene, onSound = () => {}) {
     const W = WEAPONS[wi]; if (!W) return;
     const req = ++S.req; S.wi = wi; S.ready = false;
     const id = W.vm2, knife = !!W.melee;
-    let m;
-    try { m = await loadModel(id); if (parts && parts.length) await loadParts().catch(() => {}); } catch { return; }
+    let m; const skey = knife ? null : skinModelId(si, id);
+    try { m = await loadModel(id); if (parts && parts.length) await loadParts().catch(() => {}); if (skey) await loadSkinModel(skey).catch(() => {}); } catch { return; }
     if (req !== S.req) return; // 받는 사이 다른 무기로 바뀜
     if (S.model && S.model !== m.scene) wg.remove(S.model);
     if (S.mixer) S.mixer.stopAllAction();
     S.model = m.scene; wg.add(m.scene); glassLens(m.scene);
+    const hs = m.scene.getObjectByName('held_shell'); if (hs) hs.visible = id === 'hammer'; // 손에 쥔 산탄은 펌프 산탄총만 (소총 모델에 같이 들어 있음)
     S.root = m.scene.getObjectByName('root'); S.flash = m.scene.getObjectByName('flash'); S.cam = m.scene.getObjectByName('cam');
+    if (S.root && wearSkin(S.root, skey)) unfit(S.root); // 구조 스킨 (모양이 바뀐 총): 파츠를 새 부품에 다시 맞춤
+    const wn = skinNodesOf(S.root); S.gk = wn ? (wn.gk || (wn.gk = gimmicks(S.root))) : null; // 움직이는 장치는 모델마다 한 번만 만듦
+    if (S.gk && S.gk.scr && S.gk.ammo < 0) drawAmmo(S.gk, WEAPONS[wi].mag || 0, WEAPONS[wi].mag || 0);
     const fx = skinFx(si), fi = !knife && S.root ? fitParts(S.root, id, wi, parts, { skin: si, lv, bundle: !!(fx && fx.bundle) }) : null; // 파츠 (내장 부품 숨기기·옮기기 포함)
     applySkin(m.scene, si);
     S.id = id; S.knife = knife; S.clips = m.clips;
@@ -83,7 +130,7 @@ export function createFpv(vmScene, onSound = () => {}) {
     S.camRest.copy(S.cam ? S.cam.quaternion : new THREE.Quaternion()).invert();
     S.hip = HIP[id] || RIF;
     // 정조준: 조준경 파츠 → 그 조준점 / 가늠자 선이 있는 총 → 뒤 가늠자에서 가늠쇠로 / 그 밖 → 모델의 조준점
-    const f = FIT[id] || {}, M = MOUNT[id];
+    const f = FIT[id] || {}, M = mountOf(S.root, id); // 구조 스킨은 가늠자 선이 다를 수 있음
     S.ret = null; S.retObj = null; S.sdir.set(0, 1, 0); S.optic = null; S.emitter = fi ? fi.emitter : null;
     if (fi && fi.ret) { S.sight.fromArray(fi.sight); S.retObj = fi.retObj; S.optic = fi.ret; S.ret = fi.ret === 'x3' ? null : fi.ret === 'holo' ? 'holo' : 'dot'; S.adsZ = ADSZ[fi.ret]; }
     else if (M && M.sight) { const r = M.sight.r, q = M.sight.f; S.sight.set(0, q[0], q[1]); S.sdir.set(0, q[0] - r[0], q[1] - r[1]).normalize(); S.adsZ = -(Math.hypot(q[0] - r[0], q[1] - r[1]) + M.sight.e); }
@@ -95,7 +142,8 @@ export function createFpv(vmScene, onSound = () => {}) {
     S.kick.fill(0);
     // 가늠자 선이 있는 총: 정조준하면 눈앞의 뒤 가늠자가 흐려져 가늠쇠가 또렷이 보임 (눈의 초점)
     S.rear = [];
-    if (M && M.sight && !(fi && fi.ret)) S.root.traverse((n) => { if (n.isMesh && n.userData.cat === 'ironr' && n.visible) S.rear.push(fadeMat(n, si)); });
+    S.rearK = 0.78;
+    if (M && M.sight && !(fi && fi.ret)) S.root.traverse((n) => { if (n.isMesh && n.userData.cat === 'ironr' && n.visible && n.userData.node !== 'eye') { if (n.userData.skin) S.rearK = 0.62; S.rear.push(fadeMat(n, si)); } }); // 구조 스킨의 머리 가늠자는 반쯤만 흐려짐 (외눈은 그대로)
     play('Draw', { fade: 0, ts: fast ? 1.55 : 1.25 }); S.state = 'draw'; S.swingT = -1;
     S.ready = true;
   }
@@ -111,6 +159,7 @@ export function createFpv(vmScene, onSound = () => {}) {
       if (!cl) { S.swingT = 0; return; }
       play(nm, { fade: 0.03, ts: Math.max(1, (cl.duration * 0.9) / Math.max(0.2, (W.interval || 450) / 1000)) }); S.state = 'fire'; return;
     }
+    if (S.gk) { S.gk.fire = 1; S.gk.heat = Math.min(1, S.gk.heat + (W.auto ? 0.075 : 0.16)); }
     const name = last && S.clips.FireLast ? 'FireLast' : 'Fire', clip = S.clips[name]; if (!clip) return;
     let ts = 1;
     if (W.bolt) ts = Math.max(1, (clip.duration * 0.84) / (W.interval / 1000));
@@ -142,6 +191,7 @@ export function createFpv(vmScene, onSound = () => {}) {
     S.clipT += dt;
     while (S.evQ.length && S.evQ[0][0] <= S.clipT) onSound(S.evQ.shift()[1]);
     S.mixer.update(dt);
+    tickGimmicks(dt, m.ads || 0);
     if (S.cam) camDelta.copy(S.cam.quaternion).multiply(S.camRest); else camDelta.identity();
     // 자세 = 흔들림(바깥) × 허리 자세
     _e.set(m.rot[0], m.rot[1], m.rot[2], 'YXZ'); _qo.setFromEuler(_e); _o.compose(_v.fromArray(m.pos), _qo, _one);
@@ -176,7 +226,7 @@ export function createFpv(vmScene, onSound = () => {}) {
       _v.set(0, 0, S.adsZ); wg.position.sub(_v).applyQuaternion(_qc).add(_v); wg.quaternion.premultiply(_qc);
       wg.position.x += Math.sin(bob) * 0.0028 * mv * ads; wg.position.y -= Math.abs(Math.cos(bob)) * 0.0022 * mv * ads; wg.position.z += K[0] * ads;
     }
-    if (S.rear && S.rear.length) { const o = 1 - 0.78 * ease(Math.min(1, Math.max(0, (ads - 0.45) / 0.5))); for (const mt of S.rear) { mt.opacity = o; mt.depthWrite = o > 0.98; } }
+    if (S.rear && S.rear.length) { const o = 1 - S.rearK * ease(Math.min(1, Math.max(0, (ads - 0.45) / 0.5))); for (const mt of S.rear) { mt.opacity = o; mt.depthWrite = o > 0.98; } }
     wg.updateMatrixWorld(true);
     const showRet = !!S.ret && ads > 0.55 && wg.visible, rs = S.ret === 'holo' ? holo : dot;
     dot.visible = showRet && rs === dot; holo.visible = showRet && rs === holo;
@@ -185,5 +235,5 @@ export function createFpv(vmScene, onSound = () => {}) {
     if (S.root) S.root.localToWorld(eject.set(0.03, 0.12, 0.06));
   }
   const state = () => S.state;
-  return { setWeapon, fire, reload, inspect, stopInspect, update, camDelta, muzzle, eject, group: wg, state, get ready() { return S.ready; }, get wi() { return S.wi; }, get emitter() { return S.ready && wg.visible ? S.emitter : null; }, get optic() { return S.optic; } };
+  return { setWeapon, fire, reload, inspect, stopInspect, update, setAmmo, camDelta, muzzle, eject, group: wg, state, get ready() { return S.ready; }, get wi() { return S.wi; }, get emitter() { return S.ready && wg.visible ? S.emitter : null; }, get optic() { return S.optic; } };
 }

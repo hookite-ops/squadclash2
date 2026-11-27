@@ -5,7 +5,7 @@ import { GLTFLoader } from './vendor/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from './vendor/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from './vendor/addons/environments/RoomEnvironment.js';
 import { WEAPONS, SKINS } from './shared.js';
-import { loadParts, fitParts, planOf, noteRest, partsReady } from './attach.js';
+import { loadParts, fitParts, planOf, noteRest, partsReady, restRel, unfit } from './attach.js';
 
 // 모델마다 잰 값 (총 뼈 'root' 기준, x 오른쪽 · y 총구 방향 · z 위): 오른손·왼손 손바닥, 총구, 조준점(가늠쇠·도트·조준경 렌즈), 크기
 export const FIT = {"hx9":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.178,0.063],"sight":[-0.0,0.0649,0.0822],"min":[-0.0186,-0.0362,-0.0745],"max":[0.0186,0.178,0.0856],"sk":"trit_front"},"swarm":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.235,0.063],"sight":[0,0.1038,0.0825],"min":[-0.0199,-0.0362,-0.1245],"max":[0.0181,0.2352,0.0857],"sk":"front_trit"},"whisper":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.3181,0.062],"sight":[-0.0,0.0708,0.0815],"min":[-0.0199,-0.0362,-0.0745],"max":[0.0199,0.3182,0.0845],"sk":"front_trit"},"wasp":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.129,-0.0272],"muzzle":[0,0.28,0.0581],"sight":[-0.0,0.1647,0.1065],"min":[-0.025,-0.1985,-0.1065],"max":[0.0242,0.2805,0.1092],"sk":"front_trit"},"mist":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0259,0.116,-0.0092],"muzzle":[0,0.3359,0.0601],"sight":[-0.0,0.0326,0.113],"min":[-0.0298,-0.2456,-0.1085],"max":[0.0298,0.3366,0.1291],"sk":"dot_lens"},"hammer":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0019,0.2825,0.0135],"muzzle":[-0.0,0.5742,0.0698],"sight":null,"min":[-0.0391,-0.2516,-0.0678],"max":[0.0278,0.5743,0.1058],"sk":""},"tempest":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.2771,-0.0152],"muzzle":[-0.0,0.4199,0.062],"sight":[-0.0,0.0126,0.117],"min":[-0.0326,-0.2376,-0.087],"max":[0.0326,0.42,0.1332],"sk":"dot_lens"},"sentinel":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0013,0.2625,0.0323],"muzzle":[0,0.6499,0.062],"sight":[-0.0,0.05,0.118],"min":[-0.0336,-0.2777,-0.0985],"max":[0.0361,0.6507,0.146],"sk":"lens_f"},"nightfall":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0007,0.2525,0.0331],"muzzle":[0,0.606,0.062],"sight":[-0.0,0.0026,0.115],"min":[-0.0283,-0.2456,-0.1032],"max":[0.0318,0.606,0.1314],"sk":"dot_lens"},"titan":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0047,0.2825,0.0284],"muzzle":[-0.0,0.5942,0.062],"sight":[-0.0,0.4242,0.1145],"min":[-0.0297,-0.2556,-0.1032],"max":[0.0296,0.5946,0.1177],"sk":"front_trit"},"falcon":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0001,0.2825,0.0344],"muzzle":[0,0.7002,0.062],"sight":[-0.0,0.051,0.12],"min":[-0.0705,-0.2782,-0.0985],"max":[0.0705,0.7002,0.149],"sk":"lens_f"},"rail":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0076,0.3025,0.0253],"muzzle":[-0.0,0.8682,0.064],"sight":[-0.0,0.058,0.132],"min":[-0.0405,-0.2817,-0.0985],"max":[0.053,0.8682,0.1634],"sk":"lens_f"},"storm":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.3591,-0.0172],"muzzle":[0,0.6362,0.064],"sight":[-0.0,0.4837,0.105],"min":[-0.0345,-0.2676,-0.0889],"max":[0.0337,0.6544,0.1299],"sk":"front_trit"},"blitz":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0199,0.3791,-0.0222],"muzzle":[-0.0,0.6641,0.0659],"sight":[-0.0,-0.0074,0.129],"min":[-0.041,-0.2778,-0.1132],"max":[0.041,0.6641,0.1458],"sk":"dot_lens"},"razor":{"grip":[0.0308,-0.0013,0.0015],"fore":[0.0308,-0.0013,0.0015],"muzzle":[0,0.272,0.0449],"sight":null,"min":[-0.0194,-0.0208,-0.0819],"max":[0.0194,0.2842,0.0631],"sk":""},"punk":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.25,0.0591],"sight":[0,0.228,0.087],"min":[-0.0217,-0.034,-0.0746],"max":[0.0217,0.2503,0.0871],"sk":"front_trit"},"highnoon":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.236,0.0601],"sight":[0,0.1173,0.0885],"min":[-0.021,-0.03,-0.0736],"max":[0.021,0.236,0.0948],"sk":"front_trit"},"hail":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.003,0.3425,0.0419],"muzzle":[0,0.6069,0.0742],"sight":[0,0.2409,0.128],"min":[-0.0343,-0.3287,-0.1334],"max":[0.0343,0.6077,0.1509],"sk":"trit_front"}};
@@ -139,6 +139,61 @@ export function fadeMat(o, si) {
   const b = (f && f.b) || BASE.get(o.material) || o.material, c = b.clone(); c.name = b.name; c.transparent = true;
   const m = skinMat(c, si); m.transparent = true; o.material = m; FADE.set(o, { si, m, b }); BASE.set(m, b); return m;
 }
+// ── 구조 스킨: 총 모양 자체가 바뀌는 스킨 (assets/skins/<스킨>_<무기>.glb) ─────────────
+// 모델 노드 extras: bone(붙일 뼈) · cat(파츠 역할: muz·barrel·irons·ironr·stock …) · node(움직이는 부품). 좌표는 무기 root 기준 (x 오른쪽 · y 총구 · z 위).
+// 붙이면 원래 총 메시(root 아래)를 숨기고 역할 표시를 떼어 두고, 스킨 메시를 같은 이름의 뼈에 붙인다 → 손·장전 동작이 그대로 맞고 파츠도 스킨 부품을 숨기고 옮긴다.
+export const SKIN_MODELS = { crimson: { titan: 'crimson_titan' } };
+const SKM = {}, SKM_P = {};
+export function skinModelId(si, vmId) { const t = SKIN_MODELS[SKINS[si] && SKINS[si].id]; return (t && t[vmId]) || null; }
+export const skinModelReady = (key) => !!SKM[key];
+export function loadSkinModel(key) {
+  if (SKM[key]) return Promise.resolve(SKM[key]);
+  if (SKM_P[key]) return SKM_P[key];
+  SKM_P[key] = loader.loadAsync(`assets/skins/${key}.glb`).then((g) => {
+    const nodes = [];
+    g.scene.updateMatrixWorld(true);
+    for (const o0 of [...g.scene.children]) {
+      o0.traverse((m) => { if (m.isMesh) { m.frustumCulled = false; m.castShadow = false; m.receiveShadow = false; } });
+      const u = o0.userData || {}; let o = o0;
+      if (u.pivot) { // 움직이는 부품: 회전 중심에 빈 묶음을 두고 그 안에 (압축이 노드 위치를 옮겨도 중심 그대로)
+        o = new THREE.Group(); o.position.fromArray(u.pivot); o.userData = { ...u }; o0.userData = {}; // 역할 표시는 묶음에만 (파츠가 옮길 때 두 번 옮기지 않게)
+        o0.position.sub(o.position); o.add(o0);
+      }
+      o.updateMatrix();
+      nodes.push({ obj: o, bone: u.bone || 'root', cat: u.cat || 'body', node: u.node || '' });
+    }
+    envOf(g.scene);
+    return (SKM[key] = { key, nodes });
+  }).catch((e) => { console.warn('스킨 모델을 못 불러옴', key, e); delete SKM_P[key]; throw e; });
+  return SKM_P[key];
+}
+export function preloadSkinModels(pairs) { let p = Promise.resolve(); for (const [si, vm] of pairs) { const k = skinModelId(si, vm); if (k) p = p.then(() => loadSkinModel(k).catch(() => {})); } return p; }
+const isFit = (o) => { for (let p = o; p; p = p.parent) if (/^(fit_|part_)/.test(p.name || '')) return true; return false; };
+const WORN = new WeakMap(); // root → { hidden, added, nodes, gk } (userData 에는 열쇠 문자열만: 복제해도 안전)
+export const skinNodesOf = (root) => (root && WORN.get(root)) || null;
+// root = 무기 'root' 노드 (1인칭 VM 안 또는 3인칭 복제). key = null 이면 원래 총으로. 바뀌었으면 true (파츠는 다시 붙여야 함)
+export function wearSkin(root, key) {
+  if (!root) return false;
+  const k = key && SKM[key] ? key : null;
+  if ((root.userData.skinModel || null) === k) return false;
+  const st = WORN.get(root);
+  if (st) { for (const n of st.added) if (n.parent) n.parent.remove(n); for (const [n, vis, cat] of st.hidden) { n.visible = vis; if (cat !== undefined) n.userData.cat = cat; } }
+  WORN.delete(root); root.userData.skinModel = null;
+  if (!k) return true;
+  const hidden = [], added = [], byNode = {};
+  root.traverse((o) => { if (!o.isMesh || /^flash/i.test(o.name) || isFit(o)) return; hidden.push([o, o.visible, o.userData.cat]); o.visible = false; delete o.userData.cat; });
+  for (const t of SKM[k].nodes) {
+    const bone = t.bone === 'root' ? root : root.getObjectByName(t.bone) || root;
+    const c = t.obj.clone(true), M = t.obj.matrix.clone();
+    if (bone !== root) M.premultiply(restRel(root, bone).invert());
+    M.decompose(c.position, c.quaternion, c.scale);
+    c.userData = { cat: t.cat, node: t.node, skin: k }; c.name = 'skin_' + (t.node || t.cat);
+    bone.add(c); added.push(c);
+    if (t.node) (byNode[t.node] || (byNode[t.node] = [])).push(c);
+  }
+  WORN.set(root, { hidden, added, nodes: byNode, gk: null }); root.userData.skinModel = k;
+  return true;
+}
 export function tickSkins(t) { T.value = t; PULSE.value *= 0.92; }
 export function pulseSkin(k = 1) { PULSE.value = Math.max(PULSE.value, k); }
 export function skinFire(k = 0.35) { PULSE.value = Math.min(1.2, PULSE.value + k * 0.3); }
@@ -185,11 +240,16 @@ export function makeGun(wi, skin = 0, parts = null, lv = 1) {
     inner.traverse((o) => { if (!o.isMesh || o.name === 'laser_beam' || !vis(o)) return; o.geometry.boundingBox || o.geometry.computeBoundingBox(); g.union(t.copy(o.geometry.boundingBox).applyMatrix4(rel.multiplyMatrices(inv, o.matrixWorld))); });
     if (!g.isEmpty()) group.userData.box = g; // 실제 크기 (파츠 포함, 레이저 빛줄기는 뺌)
   };
+  const key = skinModelId(skin, id);
   const fill = (m) => {
     const cl = m.pristine.clone(true); cl.position.set(0, 0, 0); cl.quaternion.identity(); cl.scale.set(1, 1, 1); cl.traverse((o) => { if (/^flash/i.test(o.name)) o.visible = false; });
     inner.add(cl);
-    if (partsReady() || !(parts && parts.length)) { fit(cl); resolve(info); }
-    else { applySkin(cl, skin); loadParts().then(() => { fit(cl); resolve(info); }, () => resolve(info)); }
+    const go = () => {
+      if (key && wearSkin(cl, key)) unfit(cl); // 구조 스킨: 모양이 바뀐 부품에 파츠를 다시 맞춤
+      if (partsReady() || !(parts && parts.length)) { fit(cl); resolve(info); }
+      else { applySkin(cl, skin); loadParts().then(() => { fit(cl); resolve(info); }, () => resolve(info)); }
+    };
+    if (key && !skinModelReady(key)) { applySkin(cl, skin); loadSkinModel(key).then(go, go); } else go();
   }; // 총구 불꽃 모델은 숨김 (3인칭 불꽃은 avatar.js 의 그림)
   if (cache[id]) fill(cache[id]); else if (id) loadModel(id).then(fill, () => resolve(info));
   return info;

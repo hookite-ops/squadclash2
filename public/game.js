@@ -2,7 +2,7 @@
 import * as THREE from './vendor/three.module.js';
 import { ARENA, PLAYER, WEAPONS, SKINS, NADES, ECON, NADE_WEAPON, ZONE_WEAPON, VEH_WEAPON, W_KNIFE, W_PISTOL, MAPS, setMap, BOXES, SITES, siteAt, dirFrom, rayWorld, rayPlayer, hitNormal, HIT_M, segHitsSphere, groundAt, waterAt, boxesNear, PARTS, PART_SLOTS, PART_MAX, partSlots, partOk, cleanParts, effWeapon, SKIN_LV, SKIN_LV_NAME, skinLevel, OPS, OP_BASE } from './shared.js';
 import { dressOp, tickOps, opDraw } from './operators.js';
-import { makeGun, initGunEnv, tickSkins, skinFx, setGunQuality, gunBox, pulseSkin, skinFire, preloadGuns } from './guns.js';
+import { makeGun, initGunEnv, tickSkins, skinFx, setGunQuality, gunBox, pulseSkin, skinFire, preloadGuns, preloadSkinModels } from './guns.js';
 import { createFpv } from './fpv.js';
 import { tickParts } from './attach.js';
 import { paintTex, isPaint, initPaintEditor, paintUI } from './paint.js';
@@ -249,7 +249,7 @@ const VM = { // 무기 자세별 1인칭 위치, 정조준 깊이, 반동 [뒤�
 const fpv = createFpv(vmScene, (k) => { if (k === 'click') sfxReload('out', 0.55); else if (k === 'clunk') sfxReload('in', 0.8); else if (k === 'slide') sfxReload('rack', 0.85); else if (k === 'shell') sfxReload('in', 0.45); });
 // 처음 쓸 무기부터 차례로 받아 둠 (칼·권총·기본 소총 → 나머지)
 window.__fpvState = () => fpv.state() + ':' + fpv.wi + ':' + fpv.ready;
-preloadGuns(['hx9', 'razor', 'titan', ...WEAPONS.filter((w) => !w.off).map((w) => w.vm2)]);
+preloadGuns(['hx9', 'razor', 'titan', ...WEAPONS.filter((w) => !w.off).map((w) => w.vm2)]).then(() => preloadSkinModels(mySk.map((si, wi) => [si, WEAPONS[wi].vm2]))); // 내가 고른 구조 스킨 모델도 미리
 setAvatarFlash(flashTex);
 const FX0 = { tracer: 0xffffff, flash: 0xffd27a }, _fxc = new THREE.Color();
 function fxOf(skin, lv = 1) { // 스킨의 궤적·불꽃 색. 스킨 레벨 2부터 궤적, 3부터 불꽃·탄착 색 (오로라는 무지갯빛으로 계속 바뀜). 얼티밋 번들은 처음부터 전부 + 전용 효과(kind)
@@ -2358,6 +2358,7 @@ function frame(now) {
     ads: ad, fire: !!input.fire, spr: me.sprT, visible: vm.visible, t: now / 1000, bob: me.bob, mv: clamp(Math.hypot(me.vx, me.vz) / PLAYER.speed, 0, 1.2) * (me.onGround ? 1 : 0.4),
   });
   vmCam.quaternion.copy(fpv.camDelta);
+  if (me.w != null && me.ammo) fpv.setAmmo(me.ammo[me.w] ?? 0, ew(me.w).mag || 0); // 구조 스킨의 탄약 표시창
   updateLaser();
   tickSkins(now / 1000); tickOps(now / 1000); tickParts(now / 1000);
   if (flash.visible) { flash.position.copy(fpv.muzzle); flash.position.z -= 0.02; vmFlash.position.copy(flash.position); if (now > flash._off) flash.visible = false; }
