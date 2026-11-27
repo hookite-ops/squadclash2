@@ -4,6 +4,7 @@ import { ARENA, PLAYER, WEAPONS, SKINS, NADES, ECON, NADE_WEAPON, ZONE_WEAPON, V
 import { dressOp, tickOps, opDraw } from './operators.js';
 import { makeGun, initGunEnv, tickSkins, skinFx, setGunQuality, gunBox, pulseSkin, skinFire, preloadGuns } from './guns.js';
 import { createFpv } from './fpv.js';
+import { tickParts } from './attach.js';
 import { paintTex, isPaint, initPaintEditor, paintUI } from './paint.js';
 import { makeRig, rigHold, rigShot, rigFlinch, rigMuzzle, animate as animRig, setAvatarFlash } from './avatar.js';
 import { loadRobot } from './robot.js';
@@ -540,7 +541,7 @@ function heard(x, z, range) { // 내 위치 기준 [크기 0~1, 좌우]
 }
 
 // ───────────── 상태 ─────────────
-const me = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hp: 100, alive: false, w: W_PISTOL, lastW: W_KNIFE, burstLeft: 0, burstAt: 0, spin: 0, ammo: WEAPONS.map((w) => w.mag), reloadEnd: 0, lastShot: 0, shotN: 0, onGround: true, prot: false, scoped: false, kickAnim: 0, bob: 0, draw: 0, swx: 0, swy: 0, crouch: false, sprint: false, slideT: 0, slx: 0, slz: 0, drop: false, inspAt: -1e9, drawFx: -1e9, rackN: 0, eyeH: PLAYER.eye, adsP: 0, rqP: 0, rqY: 0, rcP: 0, rcY: 0, bloom: 0, snipeQ: 0, snipeHold: false, sprT: 0, stepT: 0, shake: 0, flashUntil: 0, flashDur: 1, land: 0, vmY: 0, vmR: 0 };
+const me = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hp: 100, alive: false, w: W_PISTOL, lastW: W_KNIFE, burstLeft: 0, burstAt: 0, spin: 0, ammo: WEAPONS.map((w) => w.mag), reloadEnd: 0, lastShot: 0, shotN: 0, onGround: true, prot: false, scoped: false, kickAnim: 0, bob: 0, draw: 0, swx: 0, swy: 0, crouch: false, sprint: false, slideT: 0, slx: 0, slz: 0, drop: false, inspAt: -1e9, drawFx: -1e9, rackN: 0, eyeH: PLAYER.eye, adsP: 0, breath: 1, outBreath: false, rqP: 0, rqY: 0, rcP: 0, rcY: 0, bloom: 0, snipeQ: 0, snipeHold: false, sprT: 0, stepT: 0, shake: 0, flashUntil: 0, flashDur: 1, land: 0, vmY: 0, vmR: 0 };
 const inv = { money: 0, prim: 0, side: W_PISTOL, armor: 0, n: [0, 0, 0], med: 0 };
 const others = new Map(), _mz = new THREE.Vector3();
 let roster = [];
@@ -1182,7 +1183,7 @@ function setWeapon(wi, force) {
   const changed = wi !== me.w;
   if (changed) me.lastW = me.w;
   me.w = wi; me.reloadEnd = 0; me.shotN = 0; me.burstLeft = 0; me.spin = 0; me.inspAt = -1e9; me.snipeQ = 0; me.snipeHold = false; me.bloom = 0; setScope(false);
-  fpv.setWeapon(wi, mySk[wi], true);
+  fpv.setWeapon(wi, mySk[wi], true, myParts[wi], myLv(mySk[wi])); // 파츠·파츠 스킨까지 1인칭 모델에
   if (changed) { me.draw = 1; me.lastShot = Math.max(me.lastShot, performance.now() - WEAPONS[wi].interval + 350); sfxUI('equip'); const ef = fxOf(mySk[wi], myLv(mySk[wi])); me.drawFx = ef.kind ? performance.now() : -1e9; if (ef.kind) { sfxSkin(ef.kind, 'equip', 0.8); setTimeout(() => pulseSkin(), 520); } } // 얼티밋: 꺼내는 소리, 한 바퀴 돌며 올라오고 번쩍임
   refreshInv();
 }
@@ -1421,7 +1422,7 @@ const TAN_HIP = Math.tan((75 * Math.PI) / 360);
 // 세로 시야각 배율: 화면이 가로로 길수록 가로 시야가 넓어져 적이 작아짐 → 가로 시야를 PC 100°대·터치 100° 안으로 묶음 (16:9 모니터는 거의 그대로)
 function fovK() { const H = ((isTouch ? 100 : 106) * Math.PI) / 360, v = (2 * Math.atan(Math.tan(H) / Math.max(1, camera.aspect)) * 180) / Math.PI; return Math.min(1, v / 75); }
 function look(dx, dy, base) {
-  const zm = ew(me.w).zoom, adsK = Math.tan(((zm || VM[WEAPONS[me.w].vm].fov) * Math.PI) / 360) / TAN_HIP; // 정조준: 화면이 확대된 만큼만 느려져서 손 감각이 같음
+  const EW0 = ew(me.w), zm = EW0.zoom, adsK = Math.tan(((zm || VM[WEAPONS[me.w].vm].fov * (EW0.adsK || 1)) * Math.PI) / 360) / TAN_HIP; // 정조준: 화면이 확대된 만큼만 느려져서 손 감각이 같음
   const k = base * sens * (me.scoped ? (WEAPONS[me.w].scope ? 0.3 * ctl.sScope : adsK * ctl.sAds) : 1) * (input.fire && isTouch ? ctl.sFire : 1) * assistSlow;
   const yd = -dx * k, pd = -dy * k;
   me.yaw += yd; me.pitch = clamp(me.pitch + pd, -1.45, 1.45);
@@ -1707,6 +1708,13 @@ function lkBuild() { // 가운데에 띄울 모델
   { const f = skinFx(lkSkin); lkTheme.setHex(f ? f.flash : 0xbfd0e8); lkTint.setRGB(1, 1, 1).lerp(lkTheme, f ? 0.65 : 0.1); }
   lkGun = new THREE.Group(); lkGun.add(info.group); lkGun.userData.len = Math.max(sz.z, sz.y * 1.7, 0.3);
   lkGroup.add(lkGun);
+  const lg = lkGun;
+  info.ready.then(() => { // 모델·파츠가 다 붙으면 실제 크기로 다시 가운데 맞춤 (소음기·개머리판으로 길이가 바뀜)
+    if (lkGun !== lg) return;
+    info.group.traverse((o) => { if (o.name === 'laser_beam') o.scale.z = 0.16; }); // 무기고에서는 레이저 빛줄기를 짧게
+    info.group.position.set(0, 0, 0); const b = gunBox(info.group), c2 = b.getCenter(new THREE.Vector3()), s2 = b.getSize(new THREE.Vector3());
+    info.group.position.sub(c2); lg.userData.len = Math.max(s2.z, s2.y * 1.7, 0.3);
+  });
 }
 function lkRefresh() {
   for (const b of $('lkLeft').querySelectorAll('button')) b.classList.toggle('on', +b.dataset.w === lkW);
@@ -1977,6 +1985,42 @@ function curSpread(W) {
   const ads = W.spread * 0.12 * (1 + mv * 0.5 + (air ? 2 : 0)) * (1 + me.bloom * 0.5);
   return hip + (ads - hip) * (me.adsP >= 1 ? 1 : me.adsP * 0.6);
 }
+// 1인칭 총구(손·무기 장면)가 화면에 보이는 자리 → 같은 화면 자리·같은 깊이의 세계 좌표. 조준경 화면이면 화면 가운데 아래
+const _mw = new THREE.Vector3(), _mv = new THREE.Vector3();
+function muzzleWorld(out = []) {
+  camera.getWorldDirection(_f); _r.crossVectors(_f, camera.up).normalize(); _u.crossVectors(_r, _f);
+  if (!vm.visible || !fpv.ready) { const d = scopeOn ? 0.5 : 0.7; out[0] = eye[0] + _f.x * d - _u.x * 0.06; out[1] = eye[1] + _f.y * d - _u.y * 0.06; out[2] = eye[2] + _f.z * d - _u.z * 0.06; return out; }
+  camera.updateMatrixWorld(); vmCam.updateMatrixWorld(); _mv.copy(fpv.muzzle).applyMatrix4(vmCam.matrixWorldInverse); const depth = Math.max(0.15, -_mv.z);
+  _mw.copy(fpv.muzzle).project(vmCam); _mw.z = 0.5; _mw.unproject(camera).sub(camera.position).normalize();
+  const k = depth / Math.max(0.2, _mw.dot(_f));
+  out[0] = camera.position.x + _mw.x * k; out[1] = camera.position.y + _mw.y * k; out[2] = camera.position.z + _mw.z * k; return out;
+}
+// 레이저 파츠: 1인칭 총의 레이저 구멍에서 조준 방향으로 빛줄기, 닿는 곳에 붉은 점 (정조준하면 흐려짐)
+const laserDot = new THREE.Sprite(new THREE.SpriteMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.16, 'rgba(255,70,60,1)'); gr.addColorStop(0.42, 'rgba(255,30,30,0.35)'); gr.addColorStop(1, 'rgba(255,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+laserDot.visible = false; laserDot.renderOrder = 8; scene.add(laserDot);
+const laserBeam = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3)); g.setAttribute('color', new THREE.Float32BufferAttribute([1, 0.08, 0.05, 1, 0.08, 0.05, 0.3, 0.02, 0.012, 0.3, 0.02, 0.012], 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })); m.frustumCulled = false; m.renderOrder = 9; m.visible = false; vmScene.add(m); return m; })();
+const _la = new THREE.Vector3(), _lb = new THREE.Vector3(), _lc = new THREE.Vector3(), _ld = new THREE.Vector3();
+function updateLaser() {
+  const em = fpv.emitter, on = !!em && me.alive && !scopeOn && !car.id && me.adsP < 0.7;
+  laserDot.visible = laserBeam.visible = on;
+  if (!on) return;
+  const a = 1 - me.adsP / 0.7;
+  camera.updateMatrixWorld(); vmCam.updateMatrixWorld(); camera.getWorldDirection(_f);
+  const dir = [_f.x, _f.y, _f.z]; let t = rayWorld(eye, dir, 60);
+  for (const o of others.values()) { if (!o.alive) continue; const h = rayPlayer(eye, dir, o.x, o.y, o.z, o.c); if (h && h.t < t) t = h.t; }
+  if (t >= 60) laserDot.visible = false;
+  else { laserDot.position.set(eye[0] + dir[0] * (t - 0.03), eye[1] + dir[1] * (t - 0.03), eye[2] + dir[2] * (t - 0.03)); laserDot.scale.setScalar(Math.max(0.025, t * 0.0065)); laserDot.material.opacity = a; }
+  // 빛줄기: 레이저 구멍(손·무기 장면) → 점이 보이는 화면 자리 (같은 화면 자리의 손·무기 장면 깊이로)
+  em.getWorldPosition(_la);
+  _lb.set(eye[0] + dir[0] * Math.min(t, 60), eye[1] + dir[1] * Math.min(t, 60), eye[2] + dir[2] * Math.min(t, 60)).project(camera); _lb.z = 0.5; _lb.unproject(vmCam);
+  vmCam.getWorldPosition(_lc); _lb.sub(_lc).normalize().multiplyScalar(Math.min(8, t)).add(_lc);
+  _ld.subVectors(_lb, _la); const side = _lc.subVectors(_la, vmCam.position).cross(_ld).normalize();
+  const P = laserBeam.geometry.attributes.position, w0 = 0.0011, w1 = 0.004;
+  P.setXYZ(0, _la.x - side.x * w0, _la.y - side.y * w0, _la.z - side.z * w0); P.setXYZ(1, _la.x + side.x * w0, _la.y + side.y * w0, _la.z + side.z * w0);
+  P.setXYZ(2, _lb.x + side.x * w1, _lb.y + side.y * w1, _lb.z + side.z * w1); P.setXYZ(3, _lb.x - side.x * w1, _lb.y - side.y * w1, _lb.z - side.z * w1); P.needsUpdate = true;
+  laserBeam.material.opacity = 0.75 * a;
+}
 function tryFire(now) {
   const W = ew(me.w);
   if (me.reloadEnd || now - me.lastShot < fireInterval(W)) return false;
@@ -1989,13 +2033,13 @@ function tryFire(now) {
   }
   if (me.ammo[me.w] <= 0) { me.burstLeft = 0; startReload(now); return false; }
   me.shotN = now - me.lastShot > Math.max(260, W.interval * 1.8) ? 0 : me.shotN + 1;
-  me.lastShot = now; me.ammo[me.w]--; me.inspAt = -1e9; me.rackN = 1; fpv.fire(me.ammo[me.w] === 0);
+  me.lastShot = now; me.ammo[me.w]--; me.inspAt = -1e9; me.rackN = 1; fpv.fire(me.ammo[me.w] === 0, W);
   if (W.burst) { if (me.burstLeft > 0) me.burstLeft--; else { me.burstLeft = W.burst - 1; me.burstAt = now; } }
   camera.getWorldDirection(_f);
   _r.crossVectors(_f, camera.up).normalize(); _u.crossVectors(_r, _f);
   const spread = curSpread(W);
   const dirs = [], myFx = fxOf(mySk[me.w], myLv(mySk[me.w]));
-  const muzzle = [eye[0] + _f.x * 0.7 + _r.x * 0.2 - _u.x * 0.14, eye[1] + _f.y * 0.7 + _r.y * 0.2 - _u.y * 0.14, eye[2] + _f.z * 0.7 + _r.z * 0.2 - _u.z * 0.14];
+  const muzzle = muzzleWorld(); // 1인칭 총구가 화면에 보이는 자리에서 궤적이 나감 (정조준·파츠로 바뀌는 총구 위치 그대로)
   for (let i = 0; i < W.pellets; i++) {
     const a = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * spread;
     const sx = Math.cos(a) * rad, sy = Math.sin(a) * rad;
@@ -2162,7 +2206,7 @@ function frame(now) {
     }
     lkGroup.visible = true; vm.visible = false;
     { const D = d + 2.6, k = D / d; lkBack.position.set(lkGroup.position.x * k, lkGroup.position.y * k, -D); lkBack.scale.setScalar(D * 1.9); lkBack.visible = true; }
-    tickSkins(now / 1000); tickOps(now / 1000);
+    tickSkins(now / 1000); tickOps(now / 1000); tickParts(now / 1000);
     uiLight();
     vmRim.color.copy(lkTheme); vmRim.intensity = 2.4; lkBack.material.color.copy(lkTint).multiplyScalar(1.25);
     lkGlow.visible = true; lkGlow.color.copy(lkTheme); lkGlow.intensity = 0.8 + Math.sin(now / 600) * 0.15; lkGlow.distance = d * 1.6; lkGlow.position.set(lkGroup.position.x, lkGroup.position.y - d * 0.18, lkGroup.position.z + d * 0.25);
@@ -2200,7 +2244,13 @@ function frame(now) {
     eye[0] = me.x; eye[1] = me.y + me.eyeH; eye[2] = me.z;
     camera.position.set(eye[0], eye[1] - Math.sin(Math.min(1, me.land) * Math.PI) * 0.07, eye[2]);
     me.shake = Math.max(0, me.shake - dt * 2.2);
-    const sway = scopeOn ? (me.crouch ? 0.5 : 1) * (Math.hypot(me.vx, me.vz) > 1 ? 2.2 : 1) : 0; // 조준경을 들여다보면 숨결에 따라 살짝 흔들림
+    // 숨 참기: 조준경 화면에서 Shift 를 누르는 동안 흔들림이 거의 없어짐 (4초). 숨이 다하면 잠깐 크게 흔들리고 다시 차오름
+    const hold = scopeOn && !me.outBreath && me.breath > 0 && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+    me.breath = clamp(me.breath + (hold ? -dt / 4 : dt / 3), 0, 1);
+    if (me.breath <= 0) me.outBreath = true; else if (me.outBreath && me.breath > 0.6) me.outBreath = false;
+    const bk = hold ? 0.12 : me.outBreath ? 2.1 : 1;
+    if (scopeOn && hudCache.br !== Math.round(me.breath * 40)) { hudCache.br = Math.round(me.breath * 40); $('breathFill').style.width = (me.breath * 100).toFixed(0) + '%'; $('breath').classList.toggle('out', !!me.outBreath); $('breath').classList.toggle('hold', hold); }
+    const sway = scopeOn ? (me.crouch ? 0.5 : 1) * (Math.hypot(me.vx, me.vz) > 1 ? 2.2 : 1) * bk : 0; // 조준경을 들여다보면 숨결에 따라 살짝 흔들림
     camera.rotation.set(me.pitch + (Math.random() - 0.5) * me.shake * 0.05 + Math.sin(now / 780) * 0.0026 * sway, me.yaw + (Math.random() - 0.5) * me.shake * 0.05 + Math.sin(now / 1130 + 1) * 0.0034 * sway, 0);
     camera.quaternion.multiply(fpv.camDelta); // 장전·살펴보기 동작의 1~2° 카메라 끄덕임
     if (me.reloadEnd && now >= me.reloadEnd) { me.reloadEnd = 0; me.ammo[me.w] = ew(me.w).mag; }
@@ -2291,7 +2341,7 @@ function frame(now) {
   const W = ew(me.w);
   if (!me.alive) me.adsP = 0;
   const so = me.alive && me.scoped && !!(W.scope || W.optic) && me.adsP > 0.82; // 조준경(저격총·지정사수)은 다 올리면 조준경 화면
-  if (so !== scopeOn) { scopeOn = so; $('scopeOv').classList.toggle('hide', !so); }
+  if (so !== scopeOn) { scopeOn = so; const ov = $('scopeOv'); if (so) ov.dataset.k = W.scopeK || 'dmr'; ov.classList.toggle('hide', !so); }
   const ease = (v) => v * v * (3 - 2 * v);
   me.sprT += ((me.sprint && me.alive ? 1 : 0) - me.sprT) * Math.min(1, dt * 10);
   const ad = ease(me.adsP), hip = 1 - ad;
@@ -2305,13 +2355,14 @@ function frame(now) {
   fpv.update(dt, {
     pos: [Math.cos(me.bob) * 0.005 * hip, -Math.abs(Math.sin(me.bob)) * 0.007 * hip - me.sprT * 0.04 + (me.vmY + idle) * (0.35 + hip * 0.65) - dip, 0],
     rot: [me.swy * hip - me.sprT * 0.1 + idle * 0.8 - dip * 0.8, me.swx * hip + me.sprT * 0.38, me.sprT * 0.18 + me.vmR * (0.3 + hip * 0.7)],
-    ads: ad, fire: !!input.fire, spr: me.sprT, visible: vm.visible,
+    ads: ad, fire: !!input.fire, spr: me.sprT, visible: vm.visible, t: now / 1000, bob: me.bob, mv: clamp(Math.hypot(me.vx, me.vz) / PLAYER.speed, 0, 1.2) * (me.onGround ? 1 : 0.4),
   });
   vmCam.quaternion.copy(fpv.camDelta);
-  tickSkins(now / 1000); tickOps(now / 1000);
+  updateLaser();
+  tickSkins(now / 1000); tickOps(now / 1000); tickParts(now / 1000);
   if (flash.visible) { flash.position.copy(fpv.muzzle); flash.position.z -= 0.02; vmFlash.position.copy(flash.position); if (now > flash._off) flash.visible = false; }
   if (vmFlash.intensity > 0.01) vmFlash.intensity *= Math.exp(-dt * 38); else vmFlash.intensity = 0;
-  const tf = fovK() * (me.alive && me.scoped ? ((W.scope || W.optic) && !scopeOn ? 62 : W.zoom || VM[W.vm].fov) : me.alive && car.id ? 75 + Math.min(10, Math.abs(car.sp) * 0.5) : me.alive && me.sprint ? 81 : 75);
+  const tf = fovK() * (me.alive && me.scoped ? ((W.scope || W.optic) && !scopeOn ? 62 : W.zoom || VM[W.vm].fov * (W.adsK || 1)) : me.alive && car.id ? 75 + Math.min(10, Math.abs(car.sp) * 0.5) : me.alive && me.sprint ? 81 : 75);
   if (Math.abs(camera.fov - tf) > 0.05) { camera.fov += (tf - camera.fov) * Math.min(1, dt * 14); camera.updateProjectionMatrix(); }
   if (hudCache.spr !== me.sprint) { hudCache.spr = me.sprint; $('sprintTag').classList.toggle('on', me.sprint); }
 

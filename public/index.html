@@ -136,7 +136,7 @@ body.layedit .pad{outline:2px dashed rgba(255,255,255,.55);outline-offset:3px;to
 #lkOps{display:grid;grid-template-columns:1fr 1fr;gap:5px}#lkOps .sk i{height:34px}
 #lkOpDesc{font-size:12px;line-height:1.45;background:rgba(255,255,255,.05);border-radius:8px;padding:7px 9px;min-height:2.9em}#lkOpNote{font-size:11px;color:var(--dim);line-height:1.4}
 #lkBtns3{display:flex;gap:5px}#lkBtns3 button{flex:1;height:36px;border:0;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;background:var(--acc);color:#12151a}#lkBtns3 button.alt{background:rgba(255,255,255,.12);color:var(--txt);border:1px solid var(--line)}
-#lkTabs{display:flex;gap:4px}#lkTabs button{height:30px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.06);color:var(--dim);font-size:13px;font-weight:800;padding:0 12px;cursor:pointer}
+#lkTabs{display:flex;gap:4px}#lkTabs button{height:30px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.06);color:var(--dim);font-size:13px;font-weight:800;padding:0 9px;cursor:pointer;white-space:nowrap}
 #lkTabs button.on{background:var(--acc);color:#12151a;border-color:var(--acc)}
 #lkLv{font-size:11.5px;background:rgba(255,255,255,.05);border-radius:8px;padding:6px 8px;line-height:1.4}#lkLv b{display:block;font-size:12.5px}#lkLv span{color:var(--dim)}
 #lkLv div,.stBar{height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;margin:4px 0}#lkLv i{display:block;height:100%;background:var(--acc)}
@@ -177,9 +177,14 @@ body.layedit .pad{outline:2px dashed rgba(255,255,255,.55);outline-offset:3px;to
 #dmg{position:absolute;inset:0;opacity:0;transition:opacity .5s;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,30,45,.55))}
 #dmgDir{position:absolute;left:50%;top:50%;width:0;height:0;opacity:0;transition:opacity .6s}
 #dmgDir::after{content:"";position:absolute;left:-26px;top:-96px;border:26px solid transparent;border-top:0;border-bottom:16px solid rgba(255,60,70,.9)}
-#scopeOv{position:absolute;inset:0;background:radial-gradient(circle at center,transparent 0,transparent calc(var(--vh,1vh)*33),#000 calc(var(--vh,1vh)*33.6))}
-#scopeOv::before,#scopeOv::after{content:"";position:absolute;background:rgba(0,0,0,.8)}
-#scopeOv::before{left:50%;top:0;bottom:0;width:1px}#scopeOv::after{top:50%;left:0;right:0;height:1px}
+#scopeOv{position:absolute;inset:0;pointer-events:none;--R:calc(var(--vh,1vh)*36);animation:scIn .18s ease-out}
+#scopeOv[data-k=acog]{--R:calc(var(--vh,1vh)*42)}#scopeOv[data-k=dmr]{--R:calc(var(--vh,1vh)*38)}
+#scopeOv .lens{position:absolute;inset:0;background:radial-gradient(circle at center,rgba(150,190,255,.035) 0,transparent calc(var(--R)*.55),rgba(0,0,0,.1) calc(var(--R)*.84),rgba(0,0,0,.72) calc(var(--R)*.975),#000 var(--R))}
+#scopeOv[data-k=acog] .lens{background:radial-gradient(circle at center,rgba(255,200,150,.03) 0,transparent calc(var(--R)*.62),rgba(0,0,0,.18) calc(var(--R)*.86),rgba(0,0,0,.8) calc(var(--R)*.965),#000 var(--R))}
+#scopeOv .ret{position:absolute;left:50%;top:50%;width:calc(var(--R)*2);height:calc(var(--R)*2);transform:translate(-50%,-50%)}
+#scopeOv .ret>g{display:none}#scopeOv[data-k=sniper] .r-sniper,#scopeOv[data-k=dmr] .r-dmr,#scopeOv[data-k=acog] .r-acog{display:inline}
+@keyframes scIn{from{opacity:0;filter:brightness(0)}to{opacity:1;filter:none}}
+#breath{position:absolute;left:50%;top:calc(50% + var(--R) * .8);transform:translateX(-50%);width:120px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);font-size:11px;font-weight:700;color:rgba(230,236,245,.75);text-align:center}#breath i{position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:2px;background:rgba(160,220,255,.7);transition:background .2s}#breath span{position:absolute;left:0;right:0;top:8px;white-space:nowrap;letter-spacing:.02em}#breath.hold i{background:#7af4ff}#breath.out i{background:#ff6b6b}body.touch #breath span{display:none}
 #bottom{position:absolute;left:50%;bottom:calc(8px + var(--sb));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:5px;width:max-content}
 #weps{display:flex;gap:5px}
 .wep{min-width:62px;padding:4px 8px;text-align:center;white-space:nowrap;border-radius:7px;background:var(--panel);border:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim)}
@@ -285,7 +290,8 @@ body:not(.touch) .pad,body:not(.touch) #stickHint{display:none}
 #shopBox h3 b{margin-left:auto;margin-right:10px}
 #radio span.x{grid-column:1 / -1;padding:6px 10px}
 .lkHead{display:flex;justify-content:space-between;align-items:center}
-#lkX{height:30px;border:1px solid rgba(255,120,120,.6);border-radius:8px;font-size:13px;font-weight:800;padding:0 12px;cursor:pointer;background:rgba(190,40,48,.85);color:#fff}
+#lkX{height:30px;border:1px solid rgba(255,120,120,.6);border-radius:8px;font-size:13px;font-weight:800;padding:0 9px;cursor:pointer;background:rgba(190,40,48,.85);color:#fff;white-space:nowrap}
+body:not(.touch) #lkRight{flex-basis:276px}
 #menuExit{position:fixed;top:calc(8px + var(--st));right:calc(10px + var(--sr));height:32px;border-radius:8px;border-width:1px;border-style:solid;font-size:13px;font-weight:800;padding:0 12px;cursor:pointer;z-index:3}
 #board p{margin:0;color:var(--dim);font-size:13px}
 #cols{display:flex;gap:10px;width:min(640px,100%);flex:1;min-width:0;max-height:calc(var(--vh,1vh)*62);overflow:hidden}
@@ -392,7 +398,12 @@ body.touch #feed{font-size:10px;gap:2px}body.touch #feed div{padding:1px 6px}
 
 <div id="hud" class="hide">
   <div id="dmg"></div><div id="dmgDir"></div>
-  <div id="scopeOv" class="hide"></div>
+  <div id="scopeOv" class="hide" data-k="sniper"><div class="lens"></div><div id="breath"><i id="breathFill"></i><span>Shift 숨 참기</span></div><svg class="ret" viewBox="-100 -100 200 200" aria-hidden="true">
+    <g class="r-sniper"><path d="M-100 0H-32M32 0H100M0 -100V-32M0 32V100" stroke="#000" stroke-width="3"/><path d="M-32 0H32M0 -32V32" stroke="#000" stroke-width=".55"/>
+      <g fill="#000"><circle cx="-24" r="1.1"/><circle cx="-18" r="1.1"/><circle cx="-12" r="1.1"/><circle cx="-6" r="1.1"/><circle cx="6" r="1.1"/><circle cx="12" r="1.1"/><circle cx="18" r="1.1"/><circle cx="24" r="1.1"/><circle cy="-24" r="1.1"/><circle cy="-18" r="1.1"/><circle cy="-12" r="1.1"/><circle cy="-6" r="1.1"/><circle cy="6" r="1.1"/><circle cy="12" r="1.1"/><circle cy="18" r="1.1"/><circle cy="24" r="1.1"/></g></g>
+    <g class="r-dmr"><path d="M-100 0H-5M5 0H100M0 -100V-5M0 5V100" stroke="#000" stroke-width=".7"/><path d="M-100 0H-58M58 0H100M0 58V100" stroke="#000" stroke-width="2.6"/><path d="M-4 12H4M-3.2 21H3.2M-2.6 30H2.6M-2 39H2" stroke="#000" stroke-width=".6"/><circle r="3.2" fill="#ff3b30" opacity=".25"/><circle r="1.25" fill="#ff4b3a"/></g>
+    <g class="r-acog"><path d="M-6.5 6.5L0 -1.2L6.5 6.5" fill="none" stroke="#ff3b30" stroke-width="4" stroke-linejoin="round" opacity=".22"/><path d="M-6.5 6.5L0 -1.2L6.5 6.5" fill="none" stroke="#ff4a3a" stroke-width="1.5" stroke-linejoin="round"/><path d="M0 8V44M-6 15H6M-5 21H5M-4 27H4M-3 33H3M-2 39H2" stroke="#101214" stroke-width=".65"/><path d="M-100 0H-46M46 0H100" stroke="#101214" stroke-width="1.1"/></g>
+  </svg></div>
   <div id="flashOv"></div><div id="zoneOv"></div><div id="lowHp"></div>
   <div id="dmgNums"></div>
   <div id="cross"></div><div id="hitm"></div>

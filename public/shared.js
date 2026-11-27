@@ -108,9 +108,13 @@ export function effWeapon(wi, parts) {
     if (P.ads) E.adsMs *= P.ads;
     if (P.mag) E.mag = Math.round(W.mag * P.mag);
     if (P.quiet) E.quiet = true;
-    if (P.zoom) E.zoom = Math.min(W.zoom || 99, P.zoom);
+    if (P.slot === 'opt') { // 조준경 파츠는 내장 조준경을 바꿈: 3배율은 조준경 화면, 도트·홀로는 가까운 거리용 (센티넬의 내장 조준경도 떼어 냄)
+      if (P.zoom) { E.optic = true; E.zoom = Math.min(W.zoom || 99, P.zoom); E.scopeK = 'acog'; }
+      else { E.optic = false; delete E.zoom; E.adsK = P.id === 'holo' ? 0.9 : 0.94; }
+    }
     if (P.range && W.falloff) E.falloff = [W.falloff[0] * P.range, W.falloff[1] * P.range];
   }
+  if (!E.scopeK) E.scopeK = E.scope ? 'sniper' : E.optic ? 'dmr' : null; // 조준경 화면의 조준선 모양
   E.reload = Math.round(E.reload); E.range = Math.round(E.range);
   return E;
 }

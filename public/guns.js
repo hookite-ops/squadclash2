@@ -5,6 +5,7 @@ import { GLTFLoader } from './vendor/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from './vendor/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from './vendor/addons/environments/RoomEnvironment.js';
 import { WEAPONS, SKINS } from './shared.js';
+import { loadParts, fitParts, planOf, noteRest, partsReady } from './attach.js';
 
 // 모델마다 잰 값 (총 뼈 'root' 기준, x 오른쪽 · y 총구 방향 · z 위): 오른손·왼손 손바닥, 총구, 조준점(가늠쇠·도트·조준경 렌즈), 크기
 export const FIT = {"hx9":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.178,0.063],"sight":[-0.0,0.0649,0.0822],"min":[-0.0186,-0.0362,-0.0745],"max":[0.0186,0.178,0.0856],"sk":"trit_front"},"swarm":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.235,0.063],"sight":[0,0.1038,0.0825],"min":[-0.0199,-0.0362,-0.1245],"max":[0.0181,0.2352,0.0857],"sk":"front_trit"},"whisper":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.3181,0.062],"sight":[-0.0,0.0708,0.0815],"min":[-0.0199,-0.0362,-0.0745],"max":[0.0199,0.3182,0.0845],"sk":"front_trit"},"wasp":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.129,-0.0272],"muzzle":[0,0.28,0.0581],"sight":[-0.0,0.1647,0.1065],"min":[-0.025,-0.1985,-0.1065],"max":[0.0242,0.2805,0.1092],"sk":"front_trit"},"mist":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0259,0.116,-0.0092],"muzzle":[0,0.3359,0.0601],"sight":[-0.0,0.0326,0.113],"min":[-0.0298,-0.2456,-0.1085],"max":[0.0298,0.3366,0.1291],"sk":"dot_lens"},"hammer":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0019,0.2825,0.0135],"muzzle":[-0.0,0.5742,0.0698],"sight":null,"min":[-0.0391,-0.2516,-0.0678],"max":[0.0278,0.5743,0.1058],"sk":""},"tempest":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.2771,-0.0152],"muzzle":[-0.0,0.4199,0.062],"sight":[-0.0,0.0126,0.117],"min":[-0.0326,-0.2376,-0.087],"max":[0.0326,0.42,0.1332],"sk":"dot_lens"},"sentinel":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0013,0.2625,0.0323],"muzzle":[0,0.6499,0.062],"sight":[-0.0,0.05,0.118],"min":[-0.0336,-0.2777,-0.0985],"max":[0.0361,0.6507,0.146],"sk":"lens_f"},"nightfall":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0007,0.2525,0.0331],"muzzle":[0,0.606,0.062],"sight":[-0.0,0.0026,0.115],"min":[-0.0283,-0.2456,-0.1032],"max":[0.0318,0.606,0.1314],"sk":"dot_lens"},"titan":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0047,0.2825,0.0284],"muzzle":[-0.0,0.5942,0.062],"sight":[-0.0,0.4242,0.1145],"min":[-0.0297,-0.2556,-0.1032],"max":[0.0296,0.5946,0.1177],"sk":"front_trit"},"falcon":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0001,0.2825,0.0344],"muzzle":[0,0.7002,0.062],"sight":[-0.0,0.051,0.12],"min":[-0.0705,-0.2782,-0.0985],"max":[0.0705,0.7002,0.149],"sk":"lens_f"},"rail":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.0076,0.3025,0.0253],"muzzle":[-0.0,0.8682,0.064],"sight":[-0.0,0.058,0.132],"min":[-0.0405,-0.2817,-0.0985],"max":[0.053,0.8682,0.1634],"sk":"lens_f"},"storm":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0189,0.3591,-0.0172],"muzzle":[0,0.6362,0.064],"sight":[-0.0,0.4837,0.105],"min":[-0.0345,-0.2676,-0.0889],"max":[0.0337,0.6544,0.1299],"sk":"front_trit"},"blitz":{"grip":[0.0329,-0.0013,0.0014],"fore":[-0.0199,0.3791,-0.0222],"muzzle":[-0.0,0.6641,0.0659],"sight":[-0.0,-0.0074,0.129],"min":[-0.041,-0.2778,-0.1132],"max":[0.041,0.6641,0.1458],"sk":"dot_lens"},"razor":{"grip":[0.0308,-0.0013,0.0015],"fore":[0.0308,-0.0013,0.0015],"muzzle":[0,0.272,0.0449],"sight":null,"min":[-0.0194,-0.0208,-0.0819],"max":[0.0194,0.2842,0.0631],"sk":""},"punk":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.25,0.0591],"sight":[0,0.228,0.087],"min":[-0.0217,-0.034,-0.0746],"max":[0.0217,0.2503,0.0871],"sk":"front_trit"},"highnoon":{"grip":[0.0309,-0.0013,0.0015],"fore":[-0.0619,0.0072,-0.0122],"muzzle":[0,0.236,0.0601],"sight":[0,0.1173,0.0885],"min":[-0.021,-0.03,-0.0736],"max":[0.021,0.236,0.0948],"sk":"front_trit"},"hail":{"grip":[0.0329,-0.0013,0.0014],"fore":[0.003,0.3425,0.0419],"muzzle":[0,0.6069,0.0742],"sight":[0,0.2409,0.128],"min":[-0.0343,-0.3287,-0.1334],"max":[0.0343,0.6077,0.1509],"sk":"trit_front"}};
@@ -19,6 +20,7 @@ export function initGunEnv(renderer) {
   const pm = new THREE.PMREMGenerator(renderer);
   ENV = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose();
   for (const k in cache) envOf(cache[k].scene);
+  loadParts(() => ENV).catch(() => {}); // 파츠 모델도 같은 반사 환경으로 (작아서 바로 받아 둠)
 }
 export const gunEnv = () => ENV; // 로봇 몸(robot.js)도 같은 반사 환경을 씀
 function envOf(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) { if (ENV && m.isMeshStandardMaterial) { m.envMap = ENV; m.envMapIntensity = 0.85; m.needsUpdate = true; } } }); }
@@ -32,6 +34,7 @@ export function loadModel(id) {
     const clips = {}; for (const c of g.animations) clips[c.name] = c;
     // 3인칭·무기고용 총은 동작이 묻기 전의 원본(root 아래 부품만)에서 복제
     const src = FIT[id] && FIT[id].knife ? scene : scene.getObjectByName('root');
+    if (src) noteRest(src); // 쉬는 자세 기록 (파츠를 뼈에 붙일 때 씀)
     const pristine = src ? src.clone(true) : new THREE.Group();
     cache[id] = { scene, clips, pristine };
     return cache[id];
@@ -129,6 +132,13 @@ export function applySkin(root, si) {
     o.material = skinMat(BASE.get(o.material) || o.material, si);
   });
 }
+// 정조준 때 흐려지는 재질 (뒤 가늠자): 스킨 무늬는 그대로, 이 메시만 투명하게
+const FADE = new WeakMap();
+export function fadeMat(o, si) {
+  const f = FADE.get(o); if (f && f.si === si) { o.material = f.m; return f.m; }
+  const b = (f && f.b) || BASE.get(o.material) || o.material, c = b.clone(); c.name = b.name; c.transparent = true;
+  const m = skinMat(c, si); m.transparent = true; o.material = m; FADE.set(o, { si, m, b }); BASE.set(m, b); return m;
+}
 export function tickSkins(t) { T.value = t; PULSE.value *= 0.92; }
 export function pulseSkin(k = 1) { PULSE.value = Math.max(PULSE.value, k); }
 export function skinFire(k = 0.35) { PULSE.value = Math.min(1.2, PULSE.value + k * 0.3); }
@@ -153,17 +163,35 @@ export function skinFx(skin) { const id = SKINS[skin] && SKINS[skin].id; return 
 
 // ── 3인칭·무기고용 총 ─────────────────────────────────────
 // 바로 돌려주고, 모델이 아직 없으면 다 받는 대로 채운다. grip·fore·muzzle·sight 는 총 묶음 기준 [x, y, z] (총구 -Z)
-export function makeGun(wi, skin = 0) {
+export function makeGun(wi, skin = 0, parts = null, lv = 1) {
   const W = WEAPONS[wi] || WEAPONS[1], id = W.vm2, f = FIT[id] || FIT.hx9;
   const group = new THREE.Group(), inner = new THREE.Group(); group.add(inner);
   const conv = f.knife ? (v) => v : toG;
   if (!f.knife) inner.rotation.x = -Math.PI / 2;
   const mn = conv(f.min), mx = conv(f.max);
   const box = new THREE.Box3(new THREE.Vector3(Math.min(mn[0], mx[0]), Math.min(mn[1], mx[1]), Math.min(mn[2], mx[2])), new THREE.Vector3(Math.max(mn[0], mx[0]), Math.max(mn[1], mx[1]), Math.max(mn[2], mx[2])));
+  const plan = planOf(id, wi, parts), fx = skinFx(skin), bundle = !!(fx && fx.bundle);
+  if (plan.muzY != null) box.expandByPoint(new THREE.Vector3(0, 0, -plan.muzY)); // 소음기·장총열로 길어진 만큼
   group.userData.box = box;
-  const info = { group, grip: conv(f.grip), fore: conv(f.fore), muzzle: conv(f.muzzle), sight: conv(f.sight) || [0, (box.max.y + conv(f.muzzle)[1]) * 0.5, 0], adsZ: 0, aura: null, wi, skin };
-  const fill = (m) => { const cl = m.pristine.clone(true); cl.position.set(0, 0, 0); cl.quaternion.identity(); cl.scale.set(1, 1, 1); cl.traverse((o) => { if (/^flash/i.test(o.name)) o.visible = false; }); applySkin(cl, skin); inner.add(cl); }; // 총구 불꽃 모델은 숨김 (3인칭 불꽃은 avatar.js 의 그림)
-  if (cache[id]) fill(cache[id]); else if (id) loadModel(id).then(fill, () => {});
+  const muz = plan.muzY != null ? [0, plan.muzY, f.muzzle[2]] : f.muzzle;
+  const info = { group, grip: conv(f.grip), fore: conv(f.fore), muzzle: conv(muz), sight: conv(f.sight) || [0, (box.max.y + conv(f.muzzle)[1]) * 0.5, 0], adsZ: 0, aura: null, wi, skin, emitter: null };
+  let resolve; info.ready = new Promise((r) => (resolve = r));
+  const fit = (cl) => { // 파츠 붙이고 스킨 (파츠 스킨 Lv.3 은 파츠 재질에도 무늬)
+    const fi = fitParts(cl, id, wi, parts, { skin, lv, bundle, beam: true }); info.emitter = fi.emitter;
+    applySkin(cl, skin);
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert(), rel = new THREE.Matrix4(), g = new THREE.Box3(), t = new THREE.Box3();
+    const vis = (o) => { for (let p = o; p && p !== group; p = p.parent) if (!p.visible) return false; return true; };
+    inner.traverse((o) => { if (!o.isMesh || o.name === 'laser_beam' || !vis(o)) return; o.geometry.boundingBox || o.geometry.computeBoundingBox(); g.union(t.copy(o.geometry.boundingBox).applyMatrix4(rel.multiplyMatrices(inv, o.matrixWorld))); });
+    if (!g.isEmpty()) group.userData.box = g; // 실제 크기 (파츠 포함, 레이저 빛줄기는 뺌)
+  };
+  const fill = (m) => {
+    const cl = m.pristine.clone(true); cl.position.set(0, 0, 0); cl.quaternion.identity(); cl.scale.set(1, 1, 1); cl.traverse((o) => { if (/^flash/i.test(o.name)) o.visible = false; });
+    inner.add(cl);
+    if (partsReady() || !(parts && parts.length)) { fit(cl); resolve(info); }
+    else { applySkin(cl, skin); loadParts().then(() => { fit(cl); resolve(info); }, () => resolve(info)); }
+  }; // 총구 불꽃 모델은 숨김 (3인칭 불꽃은 avatar.js 의 그림)
+  if (cache[id]) fill(cache[id]); else if (id) loadModel(id).then(fill, () => resolve(info));
   return info;
 }
 // 모델 크기 (모델을 아직 못 받았어도 잰 값으로)

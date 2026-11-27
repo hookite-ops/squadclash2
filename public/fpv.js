@@ -3,7 +3,8 @@
 // 정조준하면 모델의 실제 조준점(가늠쇠 야광점·도트 렌즈·조준경 렌즈)과 총열 방향을 화면 한가운데에 맞춘다.
 import * as THREE from './vendor/three.module.js';
 import { WEAPONS } from './shared.js';
-import { loadModel, FIT, applySkin } from './guns.js';
+import { loadModel, FIT, applySkin, skinFx, fadeMat } from './guns.js';
+import { fitParts, loadParts, MOUNT } from './attach.js';
 
 const D2R = Math.PI / 180;
 // 허리 자세 (무기고 19 갤러리와 같은 값: 총 뼈 위치·기울기)
@@ -12,7 +13,7 @@ const RIF = { pos: [0.13, -0.14, -0.25], rot: [1.5, 4, -3] }, BIG = { pos: [0.14
 const KNF = { pos: [0.1, -0.11, -0.3], rot: [8, 6, -6] };
 const HIP = { hx9: PIS, swarm: PIS, whisper: PIS, punk: PIS, highnoon: PIS, wasp: SMG, mist: SMG, hammer: BIG, tempest: BIG, sentinel: RIF, nightfall: RIF, titan: RIF, hail: RIF, falcon: RIF, rail: BIG, storm: BIG, blitz: BIG, razor: KNF };
 // 정조준 때 조준점이 오는 깊이 (화면 앞쪽 거리, m): 가늠쇠는 멀리, 도트·조준경은 가까이
-const ADSZ = { trit: -0.42, pistol: -0.34, dot_lens: -0.2, lens_f: -0.28, none: -0.62 };
+const ADSZ = { trit: -0.42, pistol: -0.34, dot_lens: -0.2, lens_f: -0.28, none: -0.62, dot: -0.235, holo: -0.245, dot_p: -0.36, x3: -0.085 };
 // 왼손 손가락이 가늠쇠보다 높이 올라오는 무기는 조준점을 손 위로 살짝 올림 (가늠쇠가 조준점 바로 아래에 보임)
 const SIGHT_FIX = { titan: [0, 0.4242, 0.1265], hammer: [0, 0.5742, 0.1205] };
 // 동작 박자에 붙는 기계음 (무기고 19 와 같은 표) — click·clunk·slide·shell
@@ -33,12 +34,19 @@ export function createFpv(vmScene, onSound = () => {}) {
   const wg = new THREE.Group(); vmScene.add(wg);
   const mixers = new Map();
   const S = { wi: -1, id: null, model: null, mixer: null, clips: {}, action: null, actName: '', evQ: [], clipT: 0, root: null, flash: null, cam: null, camRest: new THREE.Quaternion(),
-    sight: new THREE.Vector3(), adsZ: -0.4, hip: PIS, state: 'none', knife: false, swingT: -1, swingDir: 1, ready: false, req: 0 };
+    sight: new THREE.Vector3(), sdir: new THREE.Vector3(0, 1, 0), adsZ: -0.4, ret: null, retObj: null, emitter: null, hip: PIS, state: 'none', knife: false, swingT: -1, swingDir: 1, ready: false, req: 0,
+    kick: [0, 0, 0, 0, 0, 0, 0, 0] }; // kick: 정조준 반동 용수철 [뒤로, 위로, 옆, 비틀림] 위치·속도
   const camDelta = new THREE.Quaternion(), muzzle = new THREE.Vector3(0.15, -0.1, -0.5), eject = new THREE.Vector3(0.1, -0.06, -0.35);
   // 도트 조준경의 붉은 점 (정조준하면 렌즈 가운데 = 화면 한가운데에 뜸)
   const dotTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 30); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,60,50,1)'); gr.addColorStop(0.45, 'rgba(255,30,30,0.35)'); gr.addColorStop(1, 'rgba(255,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
-  dot.scale.setScalar(0.0045); dot.renderOrder = 10; dot.visible = false; vmScene.add(dot);
+  dot.scale.setScalar(0.0056); dot.renderOrder = 10; dot.visible = false; vmScene.add(dot);
+  // 홀로그램 조준점: 둥근 고리 + 가운데 점 (정조준하면 창 가운데에 뜸)
+  const holoTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.shadowColor = 'rgba(255,60,40,0.9)'; g.shadowBlur = 6; g.strokeStyle = 'rgba(255,90,70,1)'; g.lineWidth = 3.2; g.beginPath(); g.arc(64, 64, 44, 0, Math.PI * 2); g.stroke();
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) { g.beginPath(); g.moveTo(64 + Math.cos(a) * 44, 64 + Math.sin(a) * 44); g.lineTo(64 + Math.cos(a) * 36, 64 + Math.sin(a) * 36); g.stroke(); }
+    g.fillStyle = 'rgba(255,120,100,1)'; g.beginPath(); g.arc(64, 64, 3.4, 0, Math.PI * 2); g.fill(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const holo = new THREE.Sprite(new THREE.SpriteMaterial({ map: holoTex, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+  holo.scale.setScalar(0.021); holo.renderOrder = 10; holo.visible = false; vmScene.add(holo);
   const lensed = new WeakSet();
   function glassLens(scene) { // 렌즈 재질을 비치는 유리로 (처음 한 번)
     scene.traverse((o) => { if (!o.isMesh || !/lens/.test(o.name) || lensed.has(o)) return; lensed.add(o); const m = o.material.clone(); m.transparent = true; m.opacity = 0.16; m.depthWrite = false; m.metalness = 0.2; m.roughness = 0.05; if (m.emissive) m.emissiveIntensity = 0.15; o.material = m; o.renderOrder = 5; });
@@ -56,33 +64,48 @@ export function createFpv(vmScene, onSound = () => {}) {
     return a;
   }
   // 무기 들기 (꺼내기 동작). si = 스킨 번호
-  async function setWeapon(wi, si = 0, fast = true) {
+  async function setWeapon(wi, si = 0, fast = true, parts = null, lv = 1) {
     const W = WEAPONS[wi]; if (!W) return;
     const req = ++S.req; S.wi = wi; S.ready = false;
     const id = W.vm2, knife = !!W.melee;
     let m;
-    try { m = await loadModel(id); } catch { return; }
+    try { m = await loadModel(id); if (parts && parts.length) await loadParts().catch(() => {}); } catch { return; }
     if (req !== S.req) return; // 받는 사이 다른 무기로 바뀜
     if (S.model && S.model !== m.scene) wg.remove(S.model);
     if (S.mixer) S.mixer.stopAllAction();
     S.model = m.scene; wg.add(m.scene); glassLens(m.scene);
+    S.root = m.scene.getObjectByName('root'); S.flash = m.scene.getObjectByName('flash'); S.cam = m.scene.getObjectByName('cam');
+    const fx = skinFx(si), fi = !knife && S.root ? fitParts(S.root, id, wi, parts, { skin: si, lv, bundle: !!(fx && fx.bundle) }) : null; // 파츠 (내장 부품 숨기기·옮기기 포함)
     applySkin(m.scene, si);
     S.id = id; S.knife = knife; S.clips = m.clips;
     S.mixer = mixers.get(m.scene) || new THREE.AnimationMixer(m.scene); mixers.set(m.scene, S.mixer);
     S.action = null; S.actName = '';
-    S.root = m.scene.getObjectByName('root'); S.flash = m.scene.getObjectByName('flash'); S.cam = m.scene.getObjectByName('cam');
     S.camRest.copy(S.cam ? S.cam.quaternion : new THREE.Quaternion()).invert();
     S.hip = HIP[id] || RIF;
-    const f = FIT[id] || {};
-    if (SIGHT_FIX[id]) S.sight.fromArray(SIGHT_FIX[id]); else if (f.sight) S.sight.fromArray(f.sight); else if (f.muzzle) S.sight.set(f.muzzle[0], f.muzzle[1] - 0.01, f.muzzle[2] + 0.028); // 가늠쇠가 따로 없으면 총구 위
-    S.dot = f.sk === 'dot_lens';
-    S.adsZ = f.sk === 'dot_lens' ? ADSZ.dot_lens : f.sk === 'lens_f' ? ADSZ.lens_f : !f.sight ? ADSZ.none : W.vm === 'pistol' ? ADSZ.pistol : ADSZ.trit;
+    // 정조준: 조준경 파츠 → 그 조준점 / 가늠자 선이 있는 총 → 뒤 가늠자에서 가늠쇠로 / 그 밖 → 모델의 조준점
+    const f = FIT[id] || {}, M = MOUNT[id];
+    S.ret = null; S.retObj = null; S.sdir.set(0, 1, 0); S.optic = null; S.emitter = fi ? fi.emitter : null;
+    if (fi && fi.ret) { S.sight.fromArray(fi.sight); S.retObj = fi.retObj; S.optic = fi.ret; S.ret = fi.ret === 'x3' ? null : fi.ret === 'holo' ? 'holo' : 'dot'; S.adsZ = ADSZ[fi.ret]; }
+    else if (M && M.sight) { const r = M.sight.r, q = M.sight.f; S.sight.set(0, q[0], q[1]); S.sdir.set(0, q[0] - r[0], q[1] - r[1]).normalize(); S.adsZ = -(Math.hypot(q[0] - r[0], q[1] - r[1]) + M.sight.e); }
+    else {
+      if (SIGHT_FIX[id]) S.sight.fromArray(SIGHT_FIX[id]); else if (f.sight) S.sight.fromArray(f.sight); else if (f.muzzle) S.sight.set(f.muzzle[0], f.muzzle[1] - 0.01, f.muzzle[2] + 0.028); // 가늠쇠가 따로 없으면 총구 위
+      S.ret = f.sk === 'dot_lens' ? 'dot' : null;
+      S.adsZ = f.sk === 'dot_lens' ? ADSZ.dot_lens : f.sk === 'lens_f' ? ADSZ.lens_f : !f.sight ? ADSZ.none : W.vm === 'pistol' ? ADSZ.pistol : ADSZ.trit;
+    }
+    S.kick.fill(0);
+    // 가늠자 선이 있는 총: 정조준하면 눈앞의 뒤 가늠자가 흐려져 가늠쇠가 또렷이 보임 (눈의 초점)
+    S.rear = [];
+    if (M && M.sight && !(fi && fi.ret)) S.root.traverse((n) => { if (n.isMesh && n.userData.cat === 'ironr' && n.visible) S.rear.push(fadeMat(n, si)); });
     play('Draw', { fade: 0, ts: fast ? 1.55 : 1.25 }); S.state = 'draw'; S.swingT = -1;
     S.ready = true;
   }
   // 사격: 볼트·펌프는 연사 간격에 맞춰 동작 속도를 맞춘다
-  function fire(last) {
+  function fire(last, eW) {
     const W = WEAPONS[S.wi]; if (!S.ready || !W) return;
+    if (!W.melee) { // 정조준 반동: 뒤로 밀리고 총구가 들림 (허리 사격은 모델 동작이 맡음)
+      const E = eW || W, kn = Math.min(3, Math.max(0.6, (E.kick || 0.006) / 0.006)), K = S.kick;
+      K[4] += Math.min(0.75, 0.24 * kn); K[5] += Math.min(1.1, 0.34 * kn * (E.kv || 1)); K[6] += (Math.random() - 0.5) * 0.22 * kn * (E.kh || 1); K[7] += (Math.random() - 0.5) * 0.3 * kn;
+    }
     if (W.melee) { // 칼: 베기 둘(오른 위→왼 아래 / 왼 아래→오른 위)을 번갈아. 휘두르는 간격에 동작 속도를 맞춤
       S.swingDir = -S.swingDir; const nm = S.swingDir > 0 || !S.clips.Shot ? 'Fire' : 'Shot', cl = S.clips[nm];
       if (!cl) { S.swingT = 0; return; }
@@ -134,25 +157,33 @@ export function createFpv(vmScene, onSound = () => {}) {
       }
     }
     _o.multiply(_h); _o.decompose(wg.position, wg.quaternion, _v);
-    // 정조준: 조준점·총열을 화면 정면 한가운데로
-    const ads = m.ads || 0;
+    // 정조준: 조준점을 화면 한가운데로, 가늠자 선(조준경은 총열)을 화면 정면으로
+    const ads = m.ads || 0, K = S.kick;
+    for (let n = Math.max(1, Math.ceil(dt / 0.012)), h = dt / n, i = 0; i < n; i++) for (let c = 0; c < 4; c++) { const k = c ? 300 : 380, d = c ? 24 : 30; K[c + 4] += (-k * K[c] - d * K[c + 4]) * h; K[c] += K[c + 4] * h; } // 반동 용수철
     if (ads > 1e-3 && S.root && !S.knife) {
       wg.updateMatrixWorld(true);
       const R = S.root.matrixWorld.elements;
       _S.copy(S.sight).applyMatrix4(S.root.matrixWorld);
-      _ax.set(R[4], R[5], R[6]).normalize(); _up.set(R[8], R[9], R[10]).normalize();
+      _ax.copy(S.sdir).transformDirection(S.root.matrixWorld); _up.set(R[8], R[9], R[10]).normalize();
       _rt.crossVectors(_ax, _up).normalize(); _up.crossVectors(_rt, _ax).normalize();
       _m.makeBasis(_rt, _up, _bk.copy(_ax).negate()); _qc.setFromRotationMatrix(_m).invert();
       _qb.copy(_qi.identity()).slerp(_qc, ads);
       wg.position.sub(_S).applyQuaternion(_qb).add(_S); wg.quaternion.premultiply(_qb);
       wg.position.x -= _S.x * ads; wg.position.y -= _S.y * ads; wg.position.z += (S.adsZ - _S.z) * ads;
+      // 반동·숨결·걸음 흔들림 (조준점을 중심으로 돌림)
+      const t = m.t || 0, mv = Math.min(1, m.mv || 0), bob = m.bob || 0;
+      _e.set((K[1] + Math.sin(t * 1.3) * 0.0011 + Math.abs(Math.sin(bob)) * 0.004 * mv) * ads, (K[2] + Math.sin(t * 0.9 + 1) * 0.0008 + Math.sin(bob) * 0.005 * mv) * ads, (K[3] + Math.sin(bob) * 0.012 * mv) * ads, 'YXZ'); _qc.setFromEuler(_e);
+      _v.set(0, 0, S.adsZ); wg.position.sub(_v).applyQuaternion(_qc).add(_v); wg.quaternion.premultiply(_qc);
+      wg.position.x += Math.sin(bob) * 0.0028 * mv * ads; wg.position.y -= Math.abs(Math.cos(bob)) * 0.0022 * mv * ads; wg.position.z += K[0] * ads;
     }
+    if (S.rear && S.rear.length) { const o = 1 - 0.78 * ease(Math.min(1, Math.max(0, (ads - 0.45) / 0.5))); for (const mt of S.rear) { mt.opacity = o; mt.depthWrite = o > 0.98; } }
     wg.updateMatrixWorld(true);
-    dot.visible = !!S.dot && ads > 0.55 && wg.visible;
-    if (dot.visible && S.root) { dot.position.copy(S.sight).applyMatrix4(S.root.matrixWorld); dot.material.opacity = Math.min(1, (ads - 0.55) / 0.3); }
+    const showRet = !!S.ret && ads > 0.55 && wg.visible, rs = S.ret === 'holo' ? holo : dot;
+    dot.visible = showRet && rs === dot; holo.visible = showRet && rs === holo;
+    if (showRet && S.root) { if (S.retObj) S.retObj.getWorldPosition(rs.position); else rs.position.copy(S.sight).applyMatrix4(S.root.matrixWorld); rs.material.opacity = Math.min(1, (ads - 0.55) / 0.3); }
     if (S.flash) S.flash.getWorldPosition(muzzle);
     if (S.root) S.root.localToWorld(eject.set(0.03, 0.12, 0.06));
   }
   const state = () => S.state;
-  return { setWeapon, fire, reload, inspect, stopInspect, update, camDelta, muzzle, eject, group: wg, state, get ready() { return S.ready; }, get wi() { return S.wi; } };
+  return { setWeapon, fire, reload, inspect, stopInspect, update, camDelta, muzzle, eject, group: wg, state, get ready() { return S.ready; }, get wi() { return S.wi; }, get emitter() { return S.ready && wg.visible ? S.emitter : null; }, get optic() { return S.optic; } };
 }
